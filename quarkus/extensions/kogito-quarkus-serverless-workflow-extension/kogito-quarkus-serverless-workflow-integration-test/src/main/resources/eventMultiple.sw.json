@@ -10,7 +10,7 @@
       "name": "quietEvent",
       "source": "",
       "type": "quiet",
-      "metadata" : { "dataOnly" : "false"}
+      "dataOnly" : "false"
     },
     {
       "name": "neverArrivingEvent",
@@ -86,9 +86,7 @@
         }
        ],
       "exclusive": false, 
-      "end": {
-        "terminate": "true"
-      }
+      "end": true
     }
   ]
 }

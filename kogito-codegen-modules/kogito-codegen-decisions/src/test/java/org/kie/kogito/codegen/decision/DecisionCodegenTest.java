@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.decision;
 
@@ -20,16 +23,24 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import org.assertj.core.api.AbstractStringAssert;
 import org.drools.codegen.common.GeneratedFile;
+import org.drools.codegen.common.GeneratedFileType;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.kie.dmn.core.compiler.DMNProfile;
+import org.kie.dmn.core.compiler.RuntimeTypeCheckOption;
 import org.kie.kogito.codegen.api.AddonsConfig;
 import org.kie.kogito.codegen.api.ApplicationSection;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
@@ -37,17 +48,25 @@ import org.kie.kogito.codegen.core.DashboardGeneratedFileUtils;
 import org.kie.kogito.codegen.core.io.CollectedResourceProducer;
 import org.kie.kogito.grafana.JGrafana;
 
+import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.stmt.ReturnStmt;
 
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singleton;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.kie.dmn.core.assembler.DMNAssemblerService.DMN_PROFILE_PREFIX;
 import static org.kie.kogito.codegen.api.utils.KogitoContextTestUtils.mockClassAvailabilityResolver;
 import static org.kie.kogito.grafana.utils.GrafanaDashboardUtils.DISABLED_DOMAIN_DASHBOARDS;
 import static org.kie.kogito.grafana.utils.GrafanaDashboardUtils.DISABLED_OPERATIONAL_DASHBOARDS;
 
 public class DecisionCodegenTest {
+
+    static final String CUSTOM_PROFILES_PACKAGE = "org.kie.kogito.codegen.decision.test.customprofiles";
 
     @ParameterizedTest
     @MethodSource("org.kie.kogito.codegen.api.utils.KogitoContextTestUtils#contextBuilders")
@@ -59,7 +78,7 @@ public class DecisionCodegenTest {
         assertThat(emptyCodeGenerator.isEnabled()).isFalse();
 
         Collection<GeneratedFile> emptyGeneratedFiles = emptyCodeGenerator.generate();
-        assertThat(emptyGeneratedFiles.size()).isEqualTo(0);
+        assertThat(emptyGeneratedFiles).isEmpty();
 
         DecisionCodegen codeGenerator = getDecisionCodegen("src/test/resources/decision/models/vacationDays", contextBuilder);
 
@@ -67,7 +86,7 @@ public class DecisionCodegenTest {
         assertThat(codeGenerator.isEnabled()).isTrue();
 
         Collection<GeneratedFile> generatedFiles = codeGenerator.generate();
-        assertThat(generatedFiles.size()).isGreaterThanOrEqualTo(1);
+        assertThat(generatedFiles).hasSizeGreaterThan(0);
     }
 
     @ParameterizedTest
@@ -76,7 +95,7 @@ public class DecisionCodegenTest {
         DecisionCodegen codeGenerator = getDecisionCodegen("src/test/resources/decision/models/vacationDays", contextBuilder);
 
         Collection<GeneratedFile> generatedFiles = codeGenerator.generate();
-        assertThat(generatedFiles.size()).isGreaterThanOrEqualTo(6);
+        assertThat(generatedFiles).hasSizeGreaterThanOrEqualTo(6);
 
         Collection<String> expectedResources = new ArrayList<>(Arrays.asList("decision/InputSet.java",
                 "decision/OutputSet.java",
@@ -87,6 +106,8 @@ public class DecisionCodegenTest {
 
         if (contextBuilder.build().hasRESTForGenerator(codeGenerator)) {
             expectedResources.add("decision/VacationsResource.java");
+
+            assertRestResource(codeGenerator);
         }
 
         assertThat(fileNames(generatedFiles)).containsAll(expectedResources);
@@ -104,13 +125,15 @@ public class DecisionCodegenTest {
         DecisionCodegen codeGenerator = getDecisionCodegen("src/test/resources/decision/alltypes/", contextBuilder);
 
         Collection<GeneratedFile> generatedFiles = codeGenerator.generate();
-        assertThat(generatedFiles.size()).isGreaterThanOrEqualTo(3);
+        assertThat(generatedFiles).hasSizeGreaterThanOrEqualTo(3);
 
         Collection<String> expectedResources = new ArrayList<>(Arrays.asList("http_58_47_47www_46trisotech_46com_47definitions_47__4f5608e9_454d74_454c22_45a47e_45ab657257fc9c/InputSet.java",
                 "http_58_47_47www_46trisotech_46com_47definitions_47__4f5608e9_454d74_454c22_45a47e_45ab657257fc9c/OutputSet.java",
                 "org/kie/kogito/app/DecisionModelResourcesProvider.java"));
         if (contextBuilder.build().hasRESTForGenerator(codeGenerator)) {
             expectedResources.add("http_58_47_47www_46trisotech_46com_47definitions_47__4f5608e9_454d74_454c22_45a47e_45ab657257fc9c/OneOfEachTypeResource.java");
+
+            assertRestResource(codeGenerator);
         }
 
         assertThat(fileNames(generatedFiles)).containsAll(expectedResources);
@@ -140,6 +163,8 @@ public class DecisionCodegenTest {
 
             assertEquals(1, vacationDomainDashboard.getDashboard().panels.size());
             assertEquals(0, vacationDomainDashboard.getDashboard().links.size());
+
+            assertRestResource(decisionCodeGenerator);
         }
     }
 
@@ -175,6 +200,8 @@ public class DecisionCodegenTest {
                     JGrafana.parse(new String(dashboards.stream().filter(x -> x.relativePath().contains("domain-dashboard-Vacations.json")).findFirst().get().contents()));
 
             assertEquals(1, vacationDomainDashboard.getDashboard().links.size());
+
+            assertRestResource(decisionCodeGenerator);
         }
     }
 
@@ -184,7 +211,7 @@ public class DecisionCodegenTest {
         DecisionCodegen codeGenerator = getDecisionCodegen("src/test/resources/decision-test20200507", contextBuilder);
 
         Collection<GeneratedFile> generatedFiles = codeGenerator.generate();
-        assertThat(generatedFiles.size()).isGreaterThanOrEqualTo(3);
+        assertThat(generatedFiles).hasSizeGreaterThanOrEqualTo(3);
 
         assertNotEmptySectionCompilationUnit(codeGenerator);
     }
@@ -194,7 +221,8 @@ public class DecisionCodegenTest {
     public void emptyName(KogitoBuildContext.Builder contextBuilder) {
         DecisionCodegen codeGenerator = getDecisionCodegen("src/test/resources/decision-empty-name", contextBuilder);
         RuntimeException re = Assertions.assertThrows(RuntimeException.class, codeGenerator::generate);
-        assertEquals("Model name should not be empty", re.getMessage());
+        String expected = "DMN: Invalid name '': Name cannot be null or empty (DMN id: _9efe7fc6-f41b-422c-accd-95dcaaa67a39, The listed name is not a valid FEEL identifier)";
+        assertTrue(re.getMessage().contains(expected));
     }
 
     @ParameterizedTest
@@ -231,8 +259,7 @@ public class DecisionCodegenTest {
         contextBuilder
                 .withClassAvailabilityResolver(mockClassAvailabilityResolver(singleton(DecisionContainerGenerator.PMML_ABSTRACT_CLASS), emptyList()));
 
-        assertNotEmptySectionCompilationUnit("src/test/resources/decision/models/vacationDays", contextBuilder)
-                .contains(DecisionContainerGenerator.PMML_FUNCTION);
+        assertNotEmptySectionCompilationUnit("src/test/resources/decision/models/vacationDays", contextBuilder);
 
         // without PMML in the classpath
         contextBuilder
@@ -240,6 +267,50 @@ public class DecisionCodegenTest {
 
         assertNotEmptySectionCompilationUnit("src/test/resources/decision/models/vacationDays", contextBuilder)
                 .doesNotContain(DecisionContainerGenerator.PMML_FUNCTION);
+    }
+
+    @ParameterizedTest
+    @MethodSource("org.kie.kogito.codegen.api.utils.KogitoContextTestUtils#contextBuilders")
+    public void getCustomDMNProfilesProperties(KogitoBuildContext.Builder contextBuilder) {
+        Properties properties = new Properties();
+        Set<String> dmnProfiles = new HashSet<>();
+        IntStream.range(0, 3).forEach(index -> {
+            String dmnProfileKey = String.format("%sProfile_%d", DMN_PROFILE_PREFIX, index);
+            String dmnProfileValue = String.format("%s.Profile_%d", CUSTOM_PROFILES_PACKAGE, index);
+            properties.put(dmnProfileKey, dmnProfileValue);
+            dmnProfiles.add(dmnProfileValue);
+        });
+        DecisionCodegen codeGenerator = getDecisionCodegen("src/test/resources/decision/models/vacationDays", contextBuilder, properties);
+        Set<String> retrieved = codeGenerator.getCustomDMNProfilesProperties();
+        assertThat(retrieved).containsExactlyInAnyOrderElementsOf(dmnProfiles);
+    }
+
+    @ParameterizedTest
+    @MethodSource("org.kie.kogito.codegen.api.utils.KogitoContextTestUtils#contextBuilders")
+    public void getEnableRuntimeTypeCheckOption(KogitoBuildContext.Builder contextBuilder) {
+        Properties properties = new Properties();
+        DecisionCodegen codeGenerator = getDecisionCodegen("src/test/resources/decision/models/vacationDays", contextBuilder, properties);
+        boolean retrieved = codeGenerator.getEnableRuntimeTypeCheckOption();
+        assertThat(retrieved).isFalse();
+        properties.put(RuntimeTypeCheckOption.PROPERTY_NAME, "false");
+        codeGenerator = getDecisionCodegen("src/test/resources/decision/models/vacationDays", contextBuilder, properties);
+        retrieved = codeGenerator.getEnableRuntimeTypeCheckOption();
+        assertThat(retrieved).isFalse();
+        properties.put(RuntimeTypeCheckOption.PROPERTY_NAME, "true");
+        codeGenerator = getDecisionCodegen("src/test/resources/decision/models/vacationDays", contextBuilder, properties);
+        retrieved = codeGenerator.getEnableRuntimeTypeCheckOption();
+        assertThat(retrieved).isTrue();
+    }
+
+    @Test
+    public void getCustomDMNProfiles() {
+        Set<String> customDMNProfiles = IntStream.range(0, 3)
+                .mapToObj(index -> String.format("%s.Profile_%d", CUSTOM_PROFILES_PACKAGE, index))
+                .collect(Collectors.toSet());
+        Set<DMNProfile> retrieved = DecisionCodegen.getCustomDMNProfiles(customDMNProfiles, Thread.currentThread().getContextClassLoader());
+        assertThat(retrieved).isNotNull().hasSize(3);
+        Set<String> retrievedStrings = retrieved.stream().map(profile -> profile.getClass().getCanonicalName()).collect(Collectors.toSet());
+        assertThat(retrievedStrings).containsExactlyInAnyOrderElementsOf(customDMNProfiles);
     }
 
     private KogitoBuildContext.Builder stronglyTypedContext(KogitoBuildContext.Builder builder) {
@@ -262,8 +333,31 @@ public class DecisionCodegenTest {
         return assertThat(compilationUnit.toString());
     }
 
+    protected void assertRestResource(DecisionCodegen codeGenerator) {
+        codeGenerator.generate().stream()
+                .filter(x -> x.type().equals(GeneratedFileType.of("REST", GeneratedFileType.Category.SOURCE, true, true)))
+                .forEach(x -> assertRestResource(StaticJavaParser.parse(new String(x.contents()))));
+    }
+
+    protected void assertRestResource(CompilationUnit compilationUnit) {
+        compilationUnit
+                .findAll(MethodDeclaration.class, x -> x.getNameAsString().contains("_dmnresult"))
+                .stream()
+                .map(x -> x.findFirst(ReturnStmt.class).orElseThrow(() -> new NoSuchElementException("Could not find return statement")))
+                .map(x -> x.findFirst(MethodCallExpr.class).orElseThrow(() -> new NoSuchElementException("Could not find method call")))
+                .forEach(x -> assertThat(x.getNameAsString()).isEqualTo("buildDMNResultResponse"));
+    }
+
     protected DecisionCodegen getDecisionCodegen(String sourcePath, KogitoBuildContext.Builder contextBuilder) {
         return getDecisionCodegen(sourcePath, AddonsConfig.DEFAULT, contextBuilder);
+    }
+
+    protected DecisionCodegen getDecisionCodegen(String sourcePath, KogitoBuildContext.Builder contextBuilder, Properties properties) {
+        KogitoBuildContext context = contextBuilder
+                .withApplicationProperties(properties)
+                .build();
+        return DecisionCodegen.ofCollectedResources(context,
+                CollectedResourceProducer.fromPaths(Paths.get(sourcePath).toAbsolutePath()));
     }
 
     protected DecisionCodegen getDecisionCodegen(String sourcePath, AddonsConfig addonsConfig, KogitoBuildContext.Builder contextBuilder) {

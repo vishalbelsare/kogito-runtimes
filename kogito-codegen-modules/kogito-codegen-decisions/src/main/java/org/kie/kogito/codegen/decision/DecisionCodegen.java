@@ -1,27 +1,33 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.decision;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -34,6 +40,8 @@ import org.kie.dmn.api.core.DMNModel;
 import org.kie.dmn.api.core.DMNRuntime;
 import org.kie.dmn.api.marshalling.DMNMarshaller;
 import org.kie.dmn.backend.marshalling.v1x.DMNMarshallerFactory;
+import org.kie.dmn.core.compiler.DMNProfile;
+import org.kie.dmn.core.compiler.RuntimeTypeCheckOption;
 import org.kie.dmn.core.internal.utils.DMNRuntimeBuilder;
 import org.kie.dmn.feel.codegen.feel11.CodegenStringUtil;
 import org.kie.dmn.model.api.BusinessKnowledgeModel;
@@ -61,17 +69,49 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static java.util.stream.Collectors.toList;
+import static org.kie.dmn.core.assembler.DMNAssemblerService.DMN_PROFILE_PREFIX;
+import static org.kie.kogito.codegen.decision.CodegenUtils.getDefinitionsFileFromModel;
 
 public class DecisionCodegen extends AbstractGenerator {
 
     public static final Logger LOGGER = LoggerFactory.getLogger(DecisionCodegen.class);
     public static final String GENERATOR_NAME = "decisions";
 
+    /**
+     * (boolean) generate java classes to support strongly typed input (default false)
+     */
     public static String STRONGLY_TYPED_CONFIGURATION_KEY = "kogito.decisions.stronglytyped";
+    /**
+     * model validation strategy; possible values: ENABLED, DISABLED, IGNORE; (default ENABLED)
+     */
     public static String VALIDATION_CONFIGURATION_KEY = "kogito.decisions.validation";
 
+    /**
+     * (string) kafka bootstrap server address
+     */
+    public static final String KOGITO_ADDON_TRACING_DECISION_KAFKA_BOOTSTRAPADDRESS = "kogito.addon.tracing.decision.kafka.bootstrapAddress";
+    /**
+     * (string) name of the decision topic; default to kogito-tracing-decision
+     */
+    public static final String KOGITO_ADDON_TRACING_DECISION_KAFKA_TOPIC_NAME = "kogito.addon.tracing.decision.kafka.topic.name";
+    /**
+     * (integer) number of decision topic partitions; default to 1
+     */
+    public static final String KOGITO_ADDON_TRACING_DECISION_KAFKA_TOPIC_PARTITIONS = "kogito.addon.tracing.decision.kafka.topic.partitions";
+
+    /**
+     * (integer) number of decision topic replication factor; default to 1
+     */
+    public static final String KOGITO_ADDON_TRACING_DECISION_KAFKA_TOPIC_REPLICATION_FACTOR = "kogito.addon.tracing.decision.kafka.topic.replicationFactor";
+
+    /**
+     * (boolean) enable/disable asynchronous collection of decision events; default to true
+     */
+    public static final String KOGITO_ADDON_TRACING_DECISION_ASYNC_ENABLED = "kogito.addon.tracing.decision.asyncEnabled";
+
     public static DecisionCodegen ofCollectedResources(KogitoBuildContext context, Collection<CollectedResource> resources) {
-        OASFactoryResolver.instance(); // manually invoke SPI, o/w Kogito CodeGen Kogito Quarkus extension failure at NewFileHotReloadTest due to java.util.ServiceConfigurationError: org.eclipse.microprofile.openapi.spi.OASFactoryResolver: io.smallrye.openapi.spi.OASFactoryResolverImpl not a subtype
+        OASFactoryResolver.instance(); // manually invoke SPI, o/w Kogito CodeGen Kogito Quarkus extension failure at NewFileHotReloadTest due to java.util.ServiceConfigurationError: org.eclipse
+        // .microprofile.openapi.spi.OASFactoryResolver: io.smallrye.openapi.spi.OASFactoryResolverImpl not a subtype
         List<CollectedResource> dmnResources = resources.stream()
                 .filter(r -> r.resource().getResourceType() == ResourceType.DMN)
                 .collect(toList());
@@ -79,7 +119,7 @@ public class DecisionCodegen extends AbstractGenerator {
     }
 
     public static DecisionCodegen ofPath(KogitoBuildContext context, Path... paths) {
-        return ofCollectedResources(context, CollectedResourceProducer.fromPaths(paths));
+        return ofCollectedResources(context, CollectedResourceProducer.fromPaths(context.ignoreHiddenFiles(), paths));
     }
 
     private static final String operationalDashboardDmnTemplate = "/grafana-dashboard-template/operational-dashboard-template.json";
@@ -89,9 +129,14 @@ public class DecisionCodegen extends AbstractGenerator {
     private final List<DMNResource> resources = new ArrayList<>();
     private final List<GeneratedFile> generatedFiles = new ArrayList<>();
     private final List<String> classesForManualReflection = new ArrayList<>();
+    private final Set<DMNProfile> customDMNProfiles = new HashSet<>();
+    private final boolean enableRuntimeTypeCheckOption;
 
     public DecisionCodegen(KogitoBuildContext context, List<CollectedResource> cResources) {
         super(context, GENERATOR_NAME, new DecisionConfigGenerator(context));
+        Set<String> customDMNProfilesProperties = getCustomDMNProfilesProperties();
+        customDMNProfiles.addAll(getCustomDMNProfiles(customDMNProfilesProperties, context.getClassLoader()));
+        enableRuntimeTypeCheckOption = getEnableRuntimeTypeCheckOption();
         this.cResources = cResources;
     }
 
@@ -100,7 +145,9 @@ public class DecisionCodegen extends AbstractGenerator {
         // First, we perform static validation on directly the XML
         DecisionValidation.dmnValidateResources(context(), r2cr.keySet());
         // DMN model processing; any semantic error during compilation will also be thrown accordingly
-        DMNRuntime dmnRuntime = DMNRuntimeBuilder.fromDefaults()
+        DMNRuntimeBuilder dmnRuntimeBuilder = DMNRuntimeBuilder.fromDefaults().setOption(new RuntimeTypeCheckOption(enableRuntimeTypeCheckOption));
+        customDMNProfiles.forEach(dmnRuntimeBuilder::addProfile);
+        DMNRuntime dmnRuntime = dmnRuntimeBuilder
                 .setRootClassLoader(context().getClassLoader()) // KOGITO-4788
                 .buildConfiguration()
                 .fromResources(r2cr.keySet())
@@ -125,23 +172,48 @@ public class DecisionCodegen extends AbstractGenerator {
         return cResources.isEmpty();
     }
 
+    Set<String> getCustomDMNProfilesProperties() {
+        Map<String, String> propertiesMap = this.context().getPropertiesMap();
+        return propertiesMap.entrySet().stream()
+                .filter(stringStringEntry -> stringStringEntry.getKey().startsWith(DMN_PROFILE_PREFIX))
+                .map(Entry::getValue)
+                .collect(Collectors.toSet());
+    }
+
+    boolean getEnableRuntimeTypeCheckOption() {
+        Map<String, String> propertiesMap = this.context().getPropertiesMap();
+        return Boolean.parseBoolean(propertiesMap.getOrDefault(RuntimeTypeCheckOption.PROPERTY_NAME, "false"));
+    }
+
+    static Set<DMNProfile> getCustomDMNProfiles(Set<String> customDMNProfiles, ClassLoader classLoader) {
+        Set<DMNProfile> toReturn = new HashSet<>();
+        for (String profileName : customDMNProfiles) {
+            Class<? extends DMNProfile> profileClass = null;
+            try {
+                profileClass = classLoader.loadClass(profileName).asSubclass(DMNProfile.class);
+            } catch (Exception e) {
+                LOGGER.warn("Unable to load DMN profile {} from classloader.", profileName);
+            }
+            if (profileClass != null) {
+                try {
+                    toReturn.add(profileClass.getDeclaredConstructor().newInstance());
+                } catch (Exception e) {
+                    LOGGER.warn("Unable to instantiate DMN profile {}", profileName, e);
+                }
+            }
+        }
+        return toReturn;
+    }
+
     private void generateAndStoreRestResources() {
         List<DecisionRestResourceGenerator> rgs = new ArrayList<>(); // REST resources
         List<DMNModel> models = resources.stream().map(DMNResource::getDmnModel).collect(Collectors.toList());
-
-        DMNOASResult oasResult = null;
-        try {
-            oasResult = DMNOASGeneratorFactory.generator(models).build();
-            String jsonContent = new ObjectMapper().writeValueAsString(oasResult.getJsonSchemaNode());
-            storeFile(GeneratedFileType.STATIC_HTTP_RESOURCE, "dmnDefinitions.json", jsonContent);
-        } catch (Exception e) {
-            LOGGER.error("Error while trying to generate OpenAPI specification for the DMN models", e);
-        }
 
         for (DMNModel model : models) {
             if (model.getName() == null || model.getName().isEmpty()) {
                 throw new RuntimeException("Model name should not be empty");
             }
+            DMNOASResult oasResult = generateAndStoreDefinitionsJson(model);
 
             boolean stronglyTypedEnabled = Optional.ofNullable(context())
                     .flatMap(c -> c.getApplicationProperty(STRONGLY_TYPED_CONFIGURATION_KEY))
@@ -188,6 +260,19 @@ public class DecisionCodegen extends AbstractGenerator {
             final DecisionCloudEventMetaFactoryGenerator ceMetaFactoryGenerator = new DecisionCloudEventMetaFactoryGenerator(context(), models);
             storeFile(REST_TYPE, ceMetaFactoryGenerator.generatedFilePath(), ceMetaFactoryGenerator.generate());
         }
+    }
+
+    private DMNOASResult generateAndStoreDefinitionsJson(DMNModel dmnModel) {
+        DMNOASResult toReturn = null;
+        try {
+            toReturn = DMNOASGeneratorFactory.generator(Collections.singleton(dmnModel)).build();
+            String jsonContent = new ObjectMapper().writeValueAsString(toReturn.getJsonSchemaNode());
+            final String DMN_DEFINITIONS_JSON = getDefinitionsFileFromModel(dmnModel);
+            storeFile(GeneratedFileType.STATIC_HTTP_RESOURCE, DMN_DEFINITIONS_JSON, jsonContent);
+        } catch (Exception e) {
+            LOGGER.error("Error while trying to generate OpenAPI specification for the DMN models", e);
+        }
+        return toReturn;
     }
 
     private void generateAndStoreDecisionModelResourcesProvider() {
@@ -276,7 +361,9 @@ public class DecisionCodegen extends AbstractGenerator {
                 context(),
                 applicationCanonicalName(),
                 this.cResources,
-                this.classesForManualReflection));
+                this.classesForManualReflection,
+                this.customDMNProfiles,
+                this.enableRuntimeTypeCheckOption));
     }
 
     @Override

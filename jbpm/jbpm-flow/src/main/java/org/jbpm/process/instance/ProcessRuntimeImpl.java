@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.instance;
 
@@ -20,22 +23,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.drools.base.definitions.rule.impl.RuleImpl;
 import org.drools.core.common.InternalKnowledgeRuntime;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.ReteEvaluator;
 import org.drools.core.common.WorkingMemoryAction;
-import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.phreak.PropagationEntry;
-import org.drools.core.time.TimeUtils;
 import org.drools.core.time.TimerService;
 import org.drools.core.time.impl.CommandServiceTimerJobFactoryManager;
 import org.drools.core.time.impl.ThreadSafeTrackableTimeJobFactoryManager;
-import org.drools.kiesession.rulebase.InternalKnowledgeBase;
 import org.jbpm.process.core.event.EventFilter;
 import org.jbpm.process.core.event.EventTypeFilter;
-import org.jbpm.process.core.timer.BusinessCalendar;
-import org.jbpm.process.core.timer.DateTimeUtils;
-import org.jbpm.process.core.timer.Timer;
 import org.jbpm.process.instance.event.DefaultSignalManagerFactory;
 import org.jbpm.process.instance.event.KogitoProcessEventSupportImpl;
 import org.jbpm.process.instance.impl.DefaultProcessInstanceManagerFactory;
@@ -45,7 +43,6 @@ import org.jbpm.workflow.core.impl.NodeIoHelper;
 import org.jbpm.workflow.core.node.EventTrigger;
 import org.jbpm.workflow.core.node.StartNode;
 import org.jbpm.workflow.core.node.Trigger;
-import org.kie.api.KieBase;
 import org.kie.api.command.ExecutableCommand;
 import org.kie.api.definition.process.Node;
 import org.kie.api.definition.process.Process;
@@ -61,55 +58,24 @@ import org.kie.api.runtime.rule.AgendaFilter;
 import org.kie.internal.command.RegistryContext;
 import org.kie.internal.process.CorrelationKey;
 import org.kie.internal.runtime.StatefulKnowledgeSession;
-import org.kie.internal.utils.CompositeClassLoader;
 import org.kie.kogito.Application;
 import org.kie.kogito.internal.process.runtime.KogitoProcessInstance;
 import org.kie.kogito.internal.process.runtime.KogitoProcessRuntime;
-import org.kie.kogito.jobs.DurationExpirationTime;
-import org.kie.kogito.jobs.ExactExpirationTime;
-import org.kie.kogito.jobs.ExpirationTime;
 import org.kie.kogito.jobs.JobsService;
-import org.kie.kogito.jobs.ProcessJobDescription;
+import org.kie.kogito.services.identity.NoOpIdentityProvider;
 import org.kie.kogito.services.jobs.impl.LegacyInMemoryJobService;
 import org.kie.kogito.services.uow.CollectingUnitOfWorkFactory;
 import org.kie.kogito.services.uow.DefaultUnitOfWorkManager;
 import org.kie.kogito.signal.SignalManager;
 import org.kie.kogito.uow.UnitOfWorkManager;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static org.jbpm.ruleflow.core.Metadata.TRIGGER_MAPPING_INPUT;
 
 public class ProcessRuntimeImpl extends AbstractProcessRuntime {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(ProcessRuntimeImpl.class);
-
     private InternalKnowledgeRuntime kruntime;
     private ProcessInstanceManager processInstanceManager;
-    private SignalManager signalManager;
-    private JobsService jobService;
     private UnitOfWorkManager unitOfWorkManager;
-
-    public ProcessRuntimeImpl(Application application, InternalKnowledgeRuntime kruntime) {
-        super(application);
-        this.kruntime = kruntime;
-        TimerService timerService = kruntime.getTimerService();
-        if (!(timerService.getTimerJobFactoryManager() instanceof CommandServiceTimerJobFactoryManager)) {
-            timerService.setTimerJobFactoryManager(new ThreadSafeTrackableTimeJobFactoryManager());
-        }
-
-        ((CompositeClassLoader) getRootClassLoader()).addClassLoader(getClass().getClassLoader());
-        initProcessInstanceManager();
-        initSignalManager();
-        unitOfWorkManager = new DefaultUnitOfWorkManager(new CollectingUnitOfWorkFactory());
-        jobService = new LegacyInMemoryJobService(kogitoProcessRuntime, unitOfWorkManager);
-        this.processEventSupport = new KogitoProcessEventSupportImpl(unitOfWorkManager);
-        if (isActive()) {
-            initProcessEventListeners();
-            initStartTimers();
-        }
-        initProcessActivationListener();
-    }
 
     public ProcessRuntimeImpl(Application application, InternalWorkingMemory workingMemory) {
         super(application);
@@ -123,7 +89,7 @@ public class ProcessRuntimeImpl extends AbstractProcessRuntime {
         initSignalManager();
         unitOfWorkManager = new DefaultUnitOfWorkManager(new CollectingUnitOfWorkFactory());
         jobService = new LegacyInMemoryJobService(kogitoProcessRuntime, unitOfWorkManager);
-        this.processEventSupport = new KogitoProcessEventSupportImpl(unitOfWorkManager);
+        this.processEventSupport = new KogitoProcessEventSupportImpl(new NoOpIdentityProvider());
         if (isActive()) {
             initProcessEventListeners();
             initStartTimers();
@@ -132,20 +98,7 @@ public class ProcessRuntimeImpl extends AbstractProcessRuntime {
     }
 
     public void initStartTimers() {
-        KieBase kbase = kruntime.getKieBase();
-        Collection<Process> processes = kbase.getProcesses();
-        for (Process process : processes) {
-            RuleFlowProcess p = (RuleFlowProcess) process;
-            List<StartNode> startNodes = p.getTimerStart();
-            if (startNodes != null && !startNodes.isEmpty()) {
-
-                for (StartNode startNode : startNodes) {
-                    if (startNode != null && startNode.getTimer() != null) {
-                        jobService.scheduleProcessJob(ProcessJobDescription.of(createTimerInstance(startNode.getTimer(), kruntime), p.getId()));
-                    }
-                }
-            }
-        }
+        initStartTimers(kruntime.getKieBase().getProcesses(), kruntime);
     }
 
     private void initProcessInstanceManager() {
@@ -159,16 +112,6 @@ public class ProcessRuntimeImpl extends AbstractProcessRuntime {
     @Override
     public KogitoProcessRuntime getKogitoProcessRuntime() {
         return kogitoProcessRuntime;
-    }
-
-    private ClassLoader getRootClassLoader() {
-        KieBase kbase = kruntime.getKieBase();
-        if (kbase != null) {
-            return ((InternalKnowledgeBase) kbase).getRootClassLoader();
-        }
-        CompositeClassLoader result = new CompositeClassLoader();
-        result.addClassLoader(Thread.currentThread().getContextClassLoader());
-        return result;
     }
 
     @Override
@@ -223,17 +166,11 @@ public class ProcessRuntimeImpl extends AbstractProcessRuntime {
 
     @Override
     public KogitoProcessInstance createProcessInstance(String processId, CorrelationKey correlationKey, Map<String, Object> parameters) {
-        try {
-            kruntime.startOperation();
-
-            final Process process = kruntime.getKieBase().getProcess(processId);
-            if (process == null) {
-                throw new IllegalArgumentException("Unknown process ID: " + processId);
-            }
-            return startProcess(process, correlationKey, parameters);
-        } finally {
-            kruntime.endOperation();
+        final Process process = kruntime.getKieBase().getProcess(processId);
+        if (process == null) {
+            throw new IllegalArgumentException("Unknown process ID: " + processId);
         }
+        return startProcess(process, correlationKey, parameters);
     }
 
     @Override
@@ -365,20 +302,20 @@ public class ProcessRuntimeImpl extends AbstractProcessRuntime {
                         String eventType = ruleName.substring(0,
                                 index);
 
-                        ((ReteEvaluator) kruntime).addPropagation(new SignalManagerSignalAction(eventType, event), true);
+                        ((ReteEvaluator) kruntime).addPropagation(new SignalManagerSignalAction(eventType, event));
                     } else if (ruleName.startsWith("RuleFlowStateEventSubProcess-")
                             || ruleName.startsWith("RuleFlowStateEvent-")
                             || ruleName.startsWith("RuleFlow-Milestone-")
                             || ruleName.startsWith("RuleFlow-AdHocComplete-")
                             || ruleName.startsWith("RuleFlow-AdHocActivate-")) {
-                        ((ReteEvaluator) kruntime).addPropagation(new SignalManagerSignalAction(ruleName, event), true);
+                        ((ReteEvaluator) kruntime).addPropagation(new SignalManagerSignalAction(ruleName, event));
                     }
                 } else {
                     String ruleName = event.getMatch().getRule().getName();
                     if (ruleName.startsWith("RuleFlow-Start-")) {
                         String processId = ruleName.replace("RuleFlow-Start-", "");
 
-                        startProcessWithParamsAndTrigger(processId, null, "conditional", true);
+                        startProcessWithParamsAndTrigger(processId, null, "conditional");
                     }
                 }
             }
@@ -397,7 +334,7 @@ public class ProcessRuntimeImpl extends AbstractProcessRuntime {
         });
     }
 
-    private void startProcessWithParamsAndTrigger(String processId, Map<String, Object> params, String type, boolean dispose) {
+    private void startProcessWithParamsAndTrigger(String processId, Map<String, Object> params, String type) {
 
         startProcess(processId, params, type);
     }
@@ -447,60 +384,6 @@ public class ProcessRuntimeImpl extends AbstractProcessRuntime {
         return active.booleanValue();
     }
 
-    protected ExpirationTime createTimerInstance(Timer timer, InternalKnowledgeRuntime kruntime) {
-        if (kruntime != null && kruntime.getEnvironment().get("jbpm.business.calendar") != null) {
-            BusinessCalendar businessCalendar = (BusinessCalendar) kruntime.getEnvironment().get("jbpm.business.calendar");
-
-            long delay = businessCalendar.calculateBusinessTimeAsDuration(timer.getDelay());
-
-            if (timer.getPeriod() == null) {
-                return DurationExpirationTime.repeat(delay);
-            } else {
-                long period = businessCalendar.calculateBusinessTimeAsDuration(timer.getPeriod());
-
-                return DurationExpirationTime.repeat(delay, period);
-            }
-        } else {
-            return configureTimerInstance(timer);
-        }
-    }
-
-    private ExpirationTime configureTimerInstance(Timer timer) {
-        long duration = -1;
-        switch (timer.getTimeType()) {
-            case Timer.TIME_CYCLE:
-                // when using ISO date/time period is not set
-                long[] repeatValues = DateTimeUtils.parseRepeatableDateTime(timer.getDelay());
-                if (repeatValues.length == 3) {
-                    int parsedReapedCount = (int) repeatValues[0];
-
-                    return DurationExpirationTime.repeat(repeatValues[1], repeatValues[2], parsedReapedCount);
-                } else {
-                    long delay = repeatValues[0];
-                    long period = -1;
-                    try {
-                        period = TimeUtils.parseTimeString(timer.getPeriod());
-                    } catch (RuntimeException e) {
-                        period = repeatValues[0];
-                    }
-
-                    return DurationExpirationTime.repeat(delay, period);
-                }
-
-            case Timer.TIME_DURATION:
-
-                duration = DateTimeUtils.parseDuration(timer.getDelay());
-                return DurationExpirationTime.after(duration);
-
-            case Timer.TIME_DATE:
-
-                return ExactExpirationTime.of(timer.getDate());
-
-            default:
-                throw new UnsupportedOperationException("Not supported timer definition");
-        }
-    }
-
     @Override
     public InternalKnowledgeRuntime getInternalKieRuntime() {
         return this.kruntime;
@@ -522,7 +405,7 @@ public class ProcessRuntimeImpl extends AbstractProcessRuntime {
 
         @Override
         public String[] getEventTypes() {
-            return null;
+            return new String[0];
         }
 
         @Override
@@ -553,7 +436,7 @@ public class ProcessRuntimeImpl extends AbstractProcessRuntime {
             }
 
             Map<String, Object> parameters = NodeIoHelper.processOutputs(trigger.getInAssociations(), key -> outputSet.get(key));
-            startProcessWithParamsAndTrigger(processId, parameters, type, false);
+            startProcessWithParamsAndTrigger(processId, parameters, type);
 
         }
     }
@@ -593,7 +476,7 @@ public class ProcessRuntimeImpl extends AbstractProcessRuntime {
         }
 
         @Override
-        public void execute(ReteEvaluator reteEvaluator) {
+        public void internalExecute(ReteEvaluator reteEvaluator) {
             signalEvent(type, event);
         }
     }

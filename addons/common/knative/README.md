@@ -1,3 +1,22 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+  -->
+
 # Kogito Knative Add-Ons
 
 Provides the capability to integrate Kogito projects with [Knative](https://knative.dev/).
@@ -24,5 +43,5 @@ in our documentation to know more about this addon.
 
 Please check the following examples to explore more about this capability:
 
-- [process-knative-quickstart-quarkus](https://github.com/kiegroup/kogito-examples/tree/stable/process-knative-quickstart-quarkus)
-- [serverless-workflow-order-processing](https://github.com/kiegroup/kogito-examples/tree/stable/serverless-workflow-order-processing)
+- [process-knative-quickstart-quarkus](https://github.com/kiegroup/kogito-examples/tree/stable/kogito-quarkus-examples/process-knative-quickstart-quarkus)
+- [serverless-workflow-order-processing](https://github.com/kiegroup/kogito-examples/tree/stable/kogito-quarkus-examples/serverless-workflow-order-processing)

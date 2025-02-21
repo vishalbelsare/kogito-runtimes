@@ -1,3 +1,22 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+  -->
+
 # Generate Kogito Project based on Spring Boot runtimes
 
 To generate a new project based on Spring Boot, perform the following command:
@@ -28,16 +47,16 @@ mvn archetype:generate \
     -DarchetypeArtifactId=kogito-spring-boot-archetype \
     -DarchetypeVersion=2.0.0-SNAPSHOT \
     -DgroupId=com.company \
-    -DartifactId=sample-kogito
+    -DartifactId=sample-kogito \
     -Dstarters=decisions,rules,processes
 ```
 
 The list of valid Kogito Spring Boot Starters are:
 
-1. [`decisions`](../starters/kogito-decisions-spring-boot-starter)
-2. [`processes`](../starters/kogito-processes-spring-boot-starter)
-3. [`rules`](../starters/kogito-rules-spring-boot-starter)
-4. [`predictions`](../starters/kogito-predictions-spring-boot-starter)
+1. [`decisions`](../starters/drools-decisions-spring-boot-starter)
+2. [`processes`](../starters/jbpm-spring-boot-starter)
+3. [`rules`](../starters/drools-rules-spring-boot-starter)
+4. [`predictions`](../starters/kie-predictions-spring-boot-starter)
 
 ## Adding Kogito Add-Ons
 
@@ -52,7 +71,7 @@ mvn archetype:generate \
     -DarchetypeArtifactId=kogito-spring-boot-archetype \
     -DarchetypeVersion=2.0.0-SNAPSHOT \
     -DgroupId=com.company \
-    -DartifactId=sample-kogito
+    -DartifactId=sample-kogito \
     -Daddons=monitoring-prometheus,persistence-infinispan
 ```
 
@@ -62,8 +81,8 @@ For a list of valid add-ons, see these listings:
 - [Runtime Independent Add-Ons](../../addons)
 
 Please note that you don't need to add the suffix `kogito-addons-springboot` to the name of the addon. For example, to
-include `kogito-addons-springboot-monitoring-prometheus` just use `monitoring-prometheus`. For runtime independent
-add-ons, just suppress the `kogito-addons` suffix. So for `kogito-addons-persistence-infinispan`
+include `kie-addons-springboot-monitoring-prometheus` just use `monitoring-prometheus`. For runtime independent
+add-ons, just suppress the `kogito-addons` suffix. So for `kie-addons-persistence-infinispan`
 use `persistence-infinispan`.
 
 > You can use `starters` and `addons` together to create a Kogito project that meets your requirements.

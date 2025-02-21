@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.core;
 
@@ -35,8 +38,6 @@ import org.drools.util.StringUtils;
 import org.kie.kogito.codegen.api.ApplicationSection;
 import org.kie.kogito.codegen.api.Generator;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
-import org.kie.kogito.codegen.api.context.impl.QuarkusKogitoBuildContext;
-import org.kie.kogito.codegen.core.events.CloudEventsResourceGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,7 +49,8 @@ public class ApplicationGenerator {
     private static final Logger LOGGER = LoggerFactory.getLogger(ApplicationGenerator.class);
 
     public static final String APPLICATION_CLASS_NAME = "Application";
-    private static final GeneratedFileType APPLICATION_SECTION_TYPE = GeneratedFileType.of("APPLICATION_SECTION", GeneratedFileType.Category.SOURCE);
+    private static final GeneratedFileType APPLICATION_SECTION_TYPE = GeneratedFileType.of("APPLICATION_SECTION",
+            GeneratedFileType.Category.SOURCE);
 
     private final ApplicationContainerGenerator applicationMainGenerator;
     private ApplicationConfigGenerator applicationConfigGenerator;
@@ -87,8 +89,6 @@ public class ApplicationGenerator {
 
         DashboardGeneratedFileUtils.list(generatedFiles).ifPresent(generatedFiles::add);
 
-        generateCloudEventsResource().ifPresent(generatedFiles::add);
-
         logGeneratedFiles(generatedFiles);
 
         return generatedFiles;
@@ -96,8 +96,11 @@ public class ApplicationGenerator {
 
     public List<GeneratedFile> generateComponents() {
         return generators.stream()
-                .flatMap(gen -> gen.generate().stream())
-                .filter(this::filterGeneratedFile)
+                .flatMap(gen -> {
+                    boolean keepRestFile = keepRestFile(gen);
+                    return gen.generate().stream()
+                            .filter(generatedFile -> filterGeneratedFile(generatedFile, keepRestFile));
+                })
                 .collect(Collectors.toList());
     }
 
@@ -113,8 +116,12 @@ public class ApplicationGenerator {
         return applicationMainGenerator.generate();
     }
 
-    private boolean filterGeneratedFile(GeneratedFile generatedFile) {
-        boolean keepFile = context.hasRESTGloballyAvailable() || !REST_TYPE.equals(generatedFile.type());
+    boolean keepRestFile(Generator generator) {
+        return context.hasRESTForGenerator(generator);
+    }
+
+    private boolean filterGeneratedFile(GeneratedFile generatedFile, boolean keepRestFile) {
+        boolean keepFile = keepRestFile || !REST_TYPE.equals(generatedFile.type());
         if (!keepFile) {
             LOGGER.warn("Skipping file because REST is disabled: " + generatedFile.relativePath());
         }
@@ -133,18 +140,9 @@ public class ApplicationGenerator {
                 .collect(Collectors.toList());
     }
 
-    private Optional<GeneratedFile> generateCloudEventsResource() {
-        // Generic CloudEvents HTTP Endpoint will be handled by https://issues.redhat.com/browse/KOGITO-2956
-        if (context.getAddonsConfig().useCloudEvents() && context.hasRESTGloballyAvailable() && QuarkusKogitoBuildContext.CONTEXT_NAME.equals(context.name())) {
-            final CloudEventsResourceGenerator ceGenerator = new CloudEventsResourceGenerator(context);
-            return Optional.of(new GeneratedFile(REST_TYPE, ceGenerator.generatedFilePath(), ceGenerator.generate()));
-        }
-        return Optional.empty();
-    }
-
     /**
      * Method to wire Generator with ApplicationGenerator if enabled
-     *
+     * 
      * @param generator
      * @param <G>
      * @return

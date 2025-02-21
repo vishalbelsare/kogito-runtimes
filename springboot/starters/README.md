@@ -1,3 +1,22 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+  -->
+
 # Kogito Spring Boot Starters
 
 In this module you will find all
@@ -23,12 +42,12 @@ Before jumping into the starters, consider adding the Kogito Spring Boot BOM to 
 
 Replace `${version.kogito}` with the [current version of Kogito](https://github.com/kiegroup/kogito-runtimes/releases).
 
-## Kogito Spring Boot Starter
+## jBPM with Drools Spring Boot Starter
 
-The `kogito-spring-boot-starter` is an all-in-one descriptor for projects that needs every Business Automation engine
-provided by Kogito. It includes Decisions, Rules, Process, Predictions and the Serverless Workflow implementation.
+The `jbpm-with-drools-spring-boot-starter` is an all-in-one descriptor for projects that needs every Business Automation engine. 
+It includes Decisions, Rules, Process, Predictions and the Serverless Workflow implementation.
 
-If your project has all these assets, or you're just trying Kogito and want a quick way of getting started, this is the
+If your project has all these assets or you want a quick way of getting started, this is the
 starter you need. For a more granular approach, consider the specific starters (or a combination of them). See below in
 the following sections how to use them.
 
@@ -38,15 +57,13 @@ To add this starter to your project:
 
 <dependencies>
   <dependency>
-    <groupId>org.kie.kogito</groupId>
-    <artifactId>kogito-spring-boot-starter</artifactId>
+    <groupId>org.jbpm</groupId>
+    <artifactId>jbpm-with-drools-spring-boot-starter</artifactId>
   </dependency>
 </dependencies>
 ```
 
-> If you are planning to use Serverless Workflow with events, consider adding the `kogito-serverless-workflow-spring-boot-starter` as well to the project. This starter will include CloudEvents support required by Serverless Workflows.
-
-## Kogito Decisions Spring Boot Starter
+## Drools Decisions Spring Boot Starter
 
 Starter only for Decisions (DMN) support. To add it to your project, use:
 
@@ -54,8 +71,8 @@ Starter only for Decisions (DMN) support. To add it to your project, use:
 
 <dependencies>
   <dependency>
-    <groupId>org.kie.kogito</groupId>
-    <artifactId>kogito-decisions-spring-boot-starter</artifactId>
+    <groupId>org.drools</groupId>
+    <artifactId>drools-decisions-spring-boot-starter</artifactId>
   </dependency>
 </dependencies>
 ```
@@ -68,55 +85,36 @@ Adds Predictions (PMML) to your Kogito Spring Boot project:
 
 <dependencies>
   <dependency>
-    <groupId>org.kie.kogito</groupId>
-    <artifactId>kogito-predictions-spring-boot-starter</artifactId>
+    <groupId>org.kie</groupId>
+    <artifactId>kie-predictions-spring-boot-starter</artifactId>
   </dependency>
 </dependencies>
 ```
 
-## Kogito Processes Spring Boot Starter
+## jBPM Spring Boot Starter
 
-To add Kogito Process engine support (BPMN) to your project, use:
+To add jBPM engine support (BPMN) to your project, use:
 
 ```xml
 
 <dependencies>
   <dependency>
-    <groupId>org.kie.kogito</groupId>
-    <artifactId>kogito-processes-spring-boot-starter</artifactId>
+    <groupId>org.jbpm</groupId>
+    <artifactId>jbpm-spring-boot-starter</artifactId>
   </dependency>
 </dependencies>
 ```
 
-## Kogito Rules Spring Boot Starter
+## Drools Rules Spring Boot Starter
 
-Adds the Kogito Rules engine support (DRLs) to your project:
+Adds the Drools Rules engine support (DRLs) to your project:
 
 ```xml
 
 <dependencies>
   <dependency>
-    <groupId>org.kie.kogito</groupId>
-    <artifactId>kogito-rules-spring-boot-starter</artifactId>
+    <groupId>org.drools</groupId>
+    <artifactId>drools-rules-spring-boot-starter</artifactId>
   </dependency>
 </dependencies>
 ```
-
-## Kogito Serverless Workflow Spring Boot Starter
-
-If you're planning to try the Serverless Workflow implementation, add the following dependency to your project:
-
-```xml
-
-<dependencies>
-  <dependency>
-    <groupId>org.kie.kogito</groupId>
-    <artifactId>kogito-serverless-workflows-spring-boot-starter</artifactId>
-  </dependency>
-</dependencies>
-```
-
-Please note that this starter will auto-include the [CloudEvents](../addons/cloudevents)
-and [Kafka](../addons/events/kafka) addons to the project as well
-for [eventing processing](https://github.com/serverlessworkflow/specification/blob/0.6.x/specification.md#Event-Definition)
-.

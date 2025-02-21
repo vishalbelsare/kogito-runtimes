@@ -1,19 +1,21 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.jbpm.workflow.core.impl;
 
 import java.util.Collection;
@@ -23,14 +25,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-import org.jbpm.process.core.impl.DataTransformerRegistry;
 import org.jbpm.process.instance.KogitoProcessContextImpl;
 import org.jbpm.process.instance.impl.AssignmentAction;
 import org.jbpm.process.instance.impl.AssignmentProducer;
 import org.jbpm.workflow.core.node.Assignment;
 import org.jbpm.workflow.core.node.Transformation;
 import org.jbpm.workflow.instance.impl.NodeInstanceImpl;
-import org.kie.api.runtime.process.DataTransformer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,10 +82,9 @@ public class NodeIoHelper {
         try {
             if (mapping.getTransformation() != null) {
                 Transformation transformation = mapping.getTransformation();
-                DataTransformer transformer = DataTransformerRegistry.get().find(transformation.getLanguage());
                 Object parameterValue = null;
-                if (transformer != null) {
-                    parameterValue = transformer.transform(transformation.getCompiledExpression(), dataSet);
+                if (transformation != null) {
+                    parameterValue = transformation.getCompiledExpression().eval(var -> dataSet.get(var));
                 }
                 if (parameterValue != null) {
                     producer.accept(mapping.getTarget().getLabel(), parameterValue);
@@ -100,7 +99,7 @@ public class NodeIoHelper {
                 });
 
             }
-        } catch (Throwable th) {
+        } catch (Exception th) {
             logger.debug("there was an error during data association processing", th);
             throw th;
         }

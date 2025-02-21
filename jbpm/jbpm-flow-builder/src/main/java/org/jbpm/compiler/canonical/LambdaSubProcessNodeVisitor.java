@@ -1,17 +1,20 @@
 /*
- * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.compiler.canonical;
 
@@ -27,15 +30,18 @@ import org.jbpm.workflow.core.impl.DataDefinition;
 import org.jbpm.workflow.core.node.SubProcessNode;
 import org.jbpm.workflow.instance.impl.NodeInstanceImpl;
 import org.kie.kogito.internal.process.runtime.KogitoWorkflowProcess;
+import org.kie.kogito.process.ProcessInstance;
+import org.kie.kogito.process.Processes;
 
+import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BooleanLiteralExpr;
 import com.github.javaparser.ast.expr.CastExpr;
+import com.github.javaparser.ast.expr.ClassExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
-import com.github.javaparser.ast.expr.LongLiteralExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
@@ -54,6 +60,10 @@ import static org.jbpm.ruleflow.core.factory.SubProcessNodeFactory.METHOD_PROCES
 import static org.jbpm.ruleflow.core.factory.SubProcessNodeFactory.METHOD_WAIT_FOR_COMPLETION;
 
 public class LambdaSubProcessNodeVisitor extends AbstractNodeVisitor<SubProcessNode> {
+
+    public LambdaSubProcessNodeVisitor(ClassLoader classLoader) {
+        super(classLoader);
+    }
 
     @Override
     protected String getNodeKey() {
@@ -75,7 +85,7 @@ public class LambdaSubProcessNodeVisitor extends AbstractNodeVisitor<SubProcessN
                 .notEmpty("subProcessId", subProcessId)
                 .validate();
 
-        body.addStatement(getAssignedFactoryMethod(factoryField, SubProcessNodeFactory.class, getNodeId(node), getNodeKey(), new LongLiteralExpr(node.getId())))
+        body.addStatement(getAssignedFactoryMethod(factoryField, SubProcessNodeFactory.class, getNodeId(node), getNodeKey(), getWorkflowElementConstructor(node.getId())))
                 .addStatement(getNameMethod(node, "Call Activity"))
                 .addStatement(getFactoryMethod(getNodeId(node), METHOD_PROCESS_ID, new StringLiteralExpr(subProcessId)))
                 .addStatement(getFactoryMethod(getNodeId(node), METHOD_PROCESS_NAME, new StringLiteralExpr(getOrDefault(node.getProcessName(), ""))))
@@ -84,39 +94,38 @@ public class LambdaSubProcessNodeVisitor extends AbstractNodeVisitor<SubProcessN
 
         Map<String, String> inputTypes = node.getIoSpecification().getInputTypes();
 
-        String subProcessModelClassName = ProcessToExecModelGenerator.extractModelClassName(subProcessId);
+        String subProcessModelClassName = metadata.getModelClassName() != null ? metadata.getModelClassName() : ProcessToExecModelGenerator.extractModelClassName(subProcessId);
+
         ModelMetaData subProcessModel = new ModelMetaData(subProcessId,
-                metadata.getPackageName(),
+                metadata.getModelPackageName() != null ? metadata.getModelPackageName() : metadata.getPackageName(),
                 subProcessModelClassName,
                 KogitoWorkflowProcess.PRIVATE_VISIBILITY,
                 VariableDeclarations.ofRawInfo(inputTypes),
                 false);
 
-        retValue.ifPresent(retValueExpression -> {
+        retValue.ifPresentOrElse(retValueExpression -> {
+
             retValueExpression.findAll(ClassOrInterfaceType.class)
                     .stream()
                     .filter(t -> t.getNameAsString().equals("$Type$"))
                     .forEach(t -> t.setName(subProcessModelClassName));
 
             retValueExpression.findFirst(MethodDeclaration.class, m -> m.getNameAsString().equals("bind"))
-                    .ifPresent(m -> m.setBody(bind(variableScope, node, subProcessModel)));
+                    .ifPresent(m -> m.setBody(bind(subProcessModel)));
             retValueExpression.findFirst(MethodDeclaration.class, m -> m.getNameAsString().equals("createInstance"))
                     .ifPresent(m -> m.setBody(createInstance(node, metadata)));
             retValueExpression.findFirst(MethodDeclaration.class, m -> m.getNameAsString().equals("unbind"))
-                    .ifPresent(m -> m.setBody(unbind(variableScope, node)));
-        });
+                    .ifPresent(m -> m.setBody(unbind(node)));
+            body.addStatement(getFactoryMethod(getNodeId(node), getNodeKey(), retValueExpression));
 
-        if (retValue.isPresent()) {
-            body.addStatement(getFactoryMethod(getNodeId(node), getNodeKey(), retValue.get()));
-        } else {
-            body.addStatement(getFactoryMethod(getNodeId(node), getNodeKey()));
-        }
+        }, () -> body.addStatement(getFactoryMethod(getNodeId(node), getNodeKey())));
+
         addNodeMappings(node, body, getNodeId(node));
         visitMetaData(node.getMetaData(), body, getNodeId(node));
         body.addStatement(getDoneMethod(getNodeId(node)));
     }
 
-    private BlockStmt bind(VariableScope variableScope, SubProcessNode subProcessNode, ModelMetaData subProcessModel) {
+    private BlockStmt bind(ModelMetaData subProcessModel) {
         BlockStmt actionBody = new BlockStmt();
         actionBody.addStatement(subProcessModel.newInstance("model"));
 
@@ -138,40 +147,30 @@ public class LambdaSubProcessNodeVisitor extends AbstractNodeVisitor<SubProcessN
         AssignExpr inputs = new AssignExpr(expr, processInputsExpr, AssignExpr.Operator.ASSIGN);
         actionBody.addStatement(inputs);
 
-        // do the actual assignments
-        for (DataDefinition inputDefinition : subProcessNode.getIoSpecification().getDataInput().values()) {
-            // remove multiinstance data. It does not belong to this model it is just for calculations with
-            // data associations
-            String collectionInput = (String) subProcessNode.getMetaData().get("MICollectionInput");
-            if (collectionInput != null && collectionInput.equals(inputDefinition.getLabel())) {
-                continue;
-            }
-            DataDefinition multiInstance = subProcessNode.getMultiInstanceSpecification().getInputDataItem();
-            if (multiInstance != null && multiInstance.getLabel().equals(inputDefinition.getLabel())) {
-                continue;
-            }
-
-            Expression getValueExpr = new MethodCallExpr(new NameExpr("inputs"), "get", nodeList(new StringLiteralExpr(inputDefinition.getLabel())));
-            actionBody.addStatement(subProcessModel.callSetter("model", inputDefinition.getLabel(), getValueExpr));
-        }
-
+        actionBody.addStatement(subProcessModel.callUpdateFromMap("model", "inputs"));
         actionBody.addStatement(new ReturnStmt(new NameExpr("model")));
         return actionBody;
     }
 
     private BlockStmt createInstance(SubProcessNode subProcessNode, ProcessMetaData metadata) {
-
         String processId = ProcessToExecModelGenerator.extractProcessId(subProcessNode.getProcessId());
-        String processFieldName = "process" + processId;
-
-        MethodCallExpr processInstanceSupplier = new MethodCallExpr(new NameExpr(processFieldName), "createInstance").addArgument("model");
+        String subProcessModelClassName = metadata.getModelClassName() != null ? metadata.getModelClassName() : ProcessToExecModelGenerator.extractModelClassName(processId);
+        String processFieldName = "app";
+        Expression expr = new NameExpr(processFieldName);
+        ClassOrInterfaceType processesType = new ClassOrInterfaceType(null, Processes.class.getCanonicalName());
+        expr = new MethodCallExpr(expr, "get", NodeList.nodeList(new ClassExpr(processesType)));
+        expr = new MethodCallExpr(expr, "processById", NodeList.nodeList(new StringLiteralExpr(subProcessNode.getProcessId())));
+        expr = new MethodCallExpr(expr, "createInstance").addArgument("model");
+        ClassOrInterfaceType subProcessType = new ClassOrInterfaceType(null, ProcessInstance.class.getCanonicalName());
+        subProcessType.setTypeArguments(new ClassOrInterfaceType(null, subProcessModelClassName));
+        expr = new CastExpr(subProcessType, expr);
 
         metadata.addSubProcess(processId, subProcessNode.getProcessId());
 
-        return new BlockStmt().addStatement(new ReturnStmt(processInstanceSupplier));
+        return new BlockStmt().addStatement(new ReturnStmt(expr));
     }
 
-    private BlockStmt unbind(VariableScope variableScope, SubProcessNode subProcessNode) {
+    private BlockStmt unbind(SubProcessNode subProcessNode) {
         BlockStmt actionBody = new BlockStmt();
 
         // process the outputs of the task

@@ -1,29 +1,33 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.ruleflow.core.factory;
 
 import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.impl.ConnectionRef;
 import org.jbpm.workflow.core.impl.ConstraintImpl;
+import org.kie.api.definition.process.WorkflowElementIdentifier;
 
 public class ConstraintFactory<T extends SplitFactory<?>> {
     private T parent;
     private ConstraintImpl constraintImpl;
 
-    public ConstraintFactory(T parent, long toNodeId, String name, String type, String dialect, String constraint) {
+    public ConstraintFactory(T parent, WorkflowElementIdentifier toNodeId, String name, String type, String dialect, String constraint) {
         this.parent = parent;
         constraintImpl = new ConstraintImpl();
         constraintImpl.setName(name);

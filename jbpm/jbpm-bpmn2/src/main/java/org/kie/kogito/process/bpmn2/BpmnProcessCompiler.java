@@ -1,17 +1,20 @@
 /*
- * Copyright 2020 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.process.bpmn2;
 
@@ -19,12 +22,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.drools.core.xml.SemanticModule;
-import org.drools.core.xml.SemanticModules;
 import org.jbpm.bpmn2.xml.BPMNDISemanticModule;
 import org.jbpm.bpmn2.xml.BPMNExtensionsSemanticModule;
 import org.jbpm.bpmn2.xml.BPMNSemanticModule;
+import org.jbpm.compiler.xml.SemanticModule;
 import org.jbpm.compiler.xml.XmlProcessReader;
+import org.jbpm.compiler.xml.core.SemanticModules;
 import org.jbpm.workflow.core.WorkflowProcess;
 import org.kie.api.definition.process.Node;
 import org.kie.api.definition.process.Process;
@@ -83,6 +86,7 @@ public class BpmnProcessCompiler {
                 }
             });
 
+            bpmnProcessesList.forEach(BpmnProcess::activate);
             return bpmnProcessesList;
         } catch (Exception e) {
             throw new BpmnProcessReaderException(e);

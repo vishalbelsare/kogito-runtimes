@@ -1,36 +1,44 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.core.context.exception;
 
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 
 import org.jbpm.process.core.Context;
 import org.jbpm.process.core.context.AbstractContext;
+import org.kie.kogito.internal.process.workitem.WorkItemExecutionException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ExceptionScope extends AbstractContext {
 
     private static final long serialVersionUID = 510l;
 
+    private static final Logger logger = LoggerFactory.getLogger(ExceptionScope.class);
+
     public static final String EXCEPTION_SCOPE = "ExceptionScope";
 
-    protected Map<String, ExceptionHandler> exceptionHandlers = new HashMap<String, ExceptionHandler>();
+    protected Map<String, ExceptionHandler> exceptionHandlers = new HashMap<>();
+    private transient Collection<ExceptionHandlerPolicy> policies = ExceptionHandlerPolicyFactory.getHandlerPolicies();
 
     @Override
     public String getType() {
@@ -49,29 +57,28 @@ public class ExceptionScope extends AbstractContext {
         return result;
     }
 
-    public ExceptionHandler getExceptionHandler(Throwable exception) {
-        Class<?> exceptionClass = exception.getClass();
-        ExceptionHandler handler = exceptionHandlers.get(exceptionClass.getName());
+    protected ExceptionHandler getHandlerFromPolicies(Throwable exception) {
+        for (ExceptionHandlerPolicy policy : policies) {
+            for (Entry<String, ExceptionHandler> handler : exceptionHandlers.entrySet()) {
+                String className = handler.getKey();
+                if (className != null && policy.test(className, exception)) {
+                    logger.debug("Policy {} matches handler {}", policy.getClass().getSimpleName(), handler.getKey());
+                    return handler.getValue();
+                }
+            }
+        }
+        return null;
+    }
 
-        if (handler == null) {
-            Collection<ExceptionHandlerPolicy> policies = ExceptionHandlerPolicyFactory.getHandlerPolicies();
-            handler = exceptionHandlers.entrySet().stream().filter(e -> test(policies, e.getKey(), exception)).findFirst().map(Entry::getValue).orElse(null);
+    public ExceptionHandler getExceptionHandler(Throwable exception) {
+        ExceptionHandler handler = getHandlerFromPolicies(exception);
+        if (handler == null && exception instanceof WorkItemExecutionException) {
+            handler = exceptionHandlers.get(((WorkItemExecutionException) exception).getErrorCode());
         }
         if (handler == null) {
             handler = exceptionHandlers.get(null);
         }
         return handler;
-    }
-
-    private boolean test(Collection<ExceptionHandlerPolicy> policies, String className, Throwable exception) {
-        if (className == null)
-            return false;
-        Iterator<ExceptionHandlerPolicy> iter = policies.iterator();
-        boolean found = false;
-        while (!found && iter.hasNext()) {
-            found = iter.next().test(className, exception);
-        }
-        return found;
     }
 
     public void removeExceptionHandler(String exception) {

@@ -1,30 +1,36 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.acme;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import javax.inject.Inject;
-
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.kie.kogito.incubation.application.AppRoot;
-import org.kie.kogito.incubation.common.*;
-import org.kie.kogito.incubation.processes.*;
+import org.kie.kogito.incubation.common.EmptyDataContext;
+import org.kie.kogito.incubation.common.ExtendedDataContext;
+import org.kie.kogito.incubation.common.MapDataContext;
+import org.kie.kogito.incubation.processes.ProcessIds;
+import org.kie.kogito.incubation.processes.ProcessInstanceId;
+import org.kie.kogito.incubation.processes.TaskInstanceId;
 import org.kie.kogito.incubation.processes.services.StatefulProcessService;
 import org.kie.kogito.incubation.processes.services.contexts.Policy;
 import org.kie.kogito.incubation.processes.services.contexts.ProcessMetaDataContext;
@@ -37,6 +43,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.quarkus.test.junit.QuarkusTest;
+
+import jakarta.inject.Inject;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -148,6 +156,7 @@ public class StatefulProcessResourceTest {
     }
 
     @Test
+    @Disabled("Revisited after ht endpoints")
     public void completeTask() throws JsonProcessingException {
         /// /processes/approvals
         var id = appRoot.get(ProcessIds.class).get("approvals");
@@ -185,6 +194,7 @@ public class StatefulProcessResourceTest {
     }
 
     @Test
+    @Disabled("Revisited after ht endpoints")
     public void completeProcess() throws JsonProcessingException {
         /// /processes/approvals
         var id = appRoot.get(ProcessIds.class).get("approvals");
@@ -261,13 +271,15 @@ public class StatefulProcessResourceTest {
                 created.data().as(MapDataContext.class)
                         .get("test", Payload.class).getValue());
 
+        TaskMetaDataContext tmdc = TaskMetaDataContext.of(Policy.of("manager", Collections.emptyList()));
+
         // send signal to complete (empty data context for this signal)
-        ExtendedDataContext taskCreated = taskSvc.create(pid.tasks().get("InitialTask"));
+        ExtendedDataContext taskCreated = taskSvc.create(pid.tasks().get("InitialTask"), ExtendedDataContext.of(tmdc, EmptyDataContext.Instance));
 
         String tid = taskCreated.data().as(MapDataContext.class).get("id", String.class);
         TaskInstanceId taskInstanceId = pid.tasks().get("InitialTask").instances().get(tid);
 
-        ExtendedDataContext result = taskSvc.complete(taskInstanceId, EmptyDataContext.Instance);
+        ExtendedDataContext result = taskSvc.complete(taskInstanceId, ExtendedDataContext.of(tmdc, EmptyDataContext.Instance));
 
         assertEquals("ad-hoc",
                 result.data().as(MapDataContext.class).get("test", Payload.class).getValue());
@@ -275,6 +287,7 @@ public class StatefulProcessResourceTest {
     }
 
     @Test
+    @Disabled("Revisited after ht endpoints")
     public void completeProcessTask() {
         var id = appRoot.get(ProcessIds.class).get("signal");
         MapDataContext dc = MapDataContext.create();

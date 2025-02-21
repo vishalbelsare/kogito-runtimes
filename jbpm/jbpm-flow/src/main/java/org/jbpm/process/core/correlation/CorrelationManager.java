@@ -1,25 +1,31 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.jbpm.process.core.correlation;
 
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
+
+import org.jbpm.process.instance.impl.ReturnValueEvaluator;
+import org.jbpm.util.JbpmClassLoaderUtil;
 
 public class CorrelationManager implements Serializable {
 
@@ -33,6 +39,7 @@ public class CorrelationManager implements Serializable {
     public CorrelationManager() {
         this.correlations = new HashMap<>();
         this.messages = new HashMap<>();
+        this.classLoader = JbpmClassLoaderUtil.findClassLoader();
     }
 
     public void setClassLoader(ClassLoader classLoader) {
@@ -89,7 +96,7 @@ public class CorrelationManager implements Serializable {
         CorrelationInstance correlationInstance = new CorrelationInstance(correlation.getId(), correlation.getName());
         CorrelationProperties properties = correlation.getMessageCorrelationFor(messageRef);
         for (String name : properties.names()) {
-            CorrelationExpressionEvaluator evaluator = properties.getExpressionFor(name);
+            ReturnValueEvaluator evaluator = properties.getExpressionFor(name);
             Object val = evaluator.eval(event);
             if (val == null) {
                 throw new IllegalArgumentException("Message property evaluated to null is not possible: " + messageRef + " property " + name);
@@ -108,7 +115,7 @@ public class CorrelationManager implements Serializable {
         CorrelationProperties properties = correlation.getProcessSubscription();
 
         for (String name : properties.names()) {
-            CorrelationExpressionEvaluator evaluator = properties.getExpressionFor(name);
+            ReturnValueEvaluator evaluator = properties.getExpressionFor(name);
             Object val = evaluator.eval(resolver);
             if (val == null) {
                 throw new IllegalArgumentException("Process Subscription property evaluated to null is not possible: " + messageRef + " property " + name);
@@ -128,14 +135,31 @@ public class CorrelationManager implements Serializable {
         throw new IllegalArgumentException("Correlation for message ref " + messageRef + " does not exist");
     }
 
-    public void addMessagePropertyExpression(String correlationRef, String messageRef, String propertyName, CorrelationExpressionEvaluator expression) {
+    public void addMessagePropertyExpression(String correlationRef, String messageRef, String propertyName, ReturnValueEvaluator expression) {
         correlations.get(correlationRef).getMessageCorrelationFor(messageRef).addProperty(propertyName, expression);
     }
 
-    public void addProcessSubscriptionPropertyExpression(String correlationRef, String propertyName, CorrelationExpressionEvaluator expression) {
+    public void addProcessSubscriptionPropertyExpression(String correlationRef, String propertyName, ReturnValueEvaluator expression) {
         if (!correlations.containsKey(correlationRef)) {
             return;
         }
         correlations.get(correlationRef).getProcessSubscription().addProperty(propertyName, expression);
     }
+
+    public Set<String> getMessagesId() {
+        return messages.keySet();
+    }
+
+    public Message findMessageById(String messageId) {
+        return messages.get(messageId);
+    }
+
+    public Set<String> getCorrelationsId() {
+        return correlations.keySet();
+    }
+
+    public Correlation findCorrelationById(String correlationId) {
+        return correlations.get(correlationId);
+    }
+
 }

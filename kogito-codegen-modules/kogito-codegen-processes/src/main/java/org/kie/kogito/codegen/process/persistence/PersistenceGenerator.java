@@ -1,29 +1,32 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.process.persistence;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
-import org.apache.commons.io.IOUtils;
 import org.drools.codegen.common.GeneratedFile;
 import org.drools.codegen.common.GeneratedFileType;
 import org.infinispan.protostream.FileDescriptorSource;
@@ -74,10 +77,19 @@ public class PersistenceGenerator extends AbstractGenerator {
      * Kogito persistence properties
      */
     // Generic
+    /**
+     * (boolean) enable/disable proto generation for DATA-INDEX; default to true
+     */
     public static final String KOGITO_PERSISTENCE_DATA_INDEX_PROTO_GENERATION = "kogito.persistence.data-index.proto.generation";
     public static final String KOGITO_PERSISTENCE_DATA_INDEX_PROTO_GENERATION_DEFAULT = "true";
+    /**
+     * (boolean) enable/disable proto marshaller generation; default to true
+     */
     public static final String KOGITO_PERSISTENCE_PROTO_MARSHALLER = "kogito.persistence.proto.marshaller";
     public static final String KOGITO_PERSISTENCE_PROTO_MARSHALLER_DEFAULT = "true";
+    /**
+     * (string) kind of persistence used; possible values: filesystem, infinispan, mongodb, postgresql, kafka, jdbc; default to infinispan
+     */
     public static final String KOGITO_PERSISTENCE_TYPE = "kogito.persistence.type";
 
     /**
@@ -91,7 +103,6 @@ public class PersistenceGenerator extends AbstractGenerator {
      */
     public static final String GENERATOR_NAME = "persistence";
     protected static final String CLASS_TEMPLATES_PERSISTENCE = "/class-templates/persistence/";
-
     private final ProtoGenerator protoGenerator;
     private final MarshallerGenerator marshallerGenerator;
 
@@ -108,8 +119,6 @@ public class PersistenceGenerator extends AbstractGenerator {
 
     @Override
     protected Collection<GeneratedFile> internalGenerate() {
-        Collection<GeneratedFile> generatedFiles = new ArrayList<>();
-
         switch (persistenceType()) {
             case INFINISPAN_PERSISTENCE_TYPE:
             case FILESYSTEM_PERSISTENCE_TYPE:
@@ -117,15 +126,10 @@ public class PersistenceGenerator extends AbstractGenerator {
             case JDBC_PERSISTENCE_TYPE:
             case KAFKA_PERSISTENCE_TYPE:
             case POSTGRESQL_PERSISTENCE_TYPE:
-                break;
+                return generateFiles();
             default:
                 throw new IllegalArgumentException("Unknown persistenceType " + persistenceType());
         }
-
-        generatedFiles.addAll(generateProtoMarshaller());
-        generatedFiles.addAll(generateProtoForDataIndex());
-
-        return generatedFiles;
     }
 
     @Override
@@ -136,6 +140,13 @@ public class PersistenceGenerator extends AbstractGenerator {
 
     public String persistenceType() {
         return context().getApplicationProperty(KOGITO_PERSISTENCE_TYPE).orElse(PersistenceGenerator.DEFAULT_PERSISTENCE_TYPE);
+    }
+
+    protected Collection<GeneratedFile> generateFiles() {
+        Collection<GeneratedFile> toReturn = new ArrayList<>();
+        toReturn.addAll(generateProtoMarshaller());
+        toReturn.addAll(generateProtoForDataIndex());
+        return toReturn;
     }
 
     protected Collection<GeneratedFile> generateProtoMarshaller() {
@@ -162,7 +173,7 @@ public class PersistenceGenerator extends AbstractGenerator {
             String typesURI = "META-INF/kogito-types.proto";
             protoFiles.add(new GeneratedFile(GeneratedFileType.INTERNAL_RESOURCE,
                     typesURI,
-                    IOUtils.toString(context().getClassLoader().getResourceAsStream(typesURI))));
+                    new String(context().getClassLoader().getResourceAsStream(typesURI).readAllBytes(), StandardCharsets.UTF_8)));
         } catch (IOException e) {
             throw new UncheckedIOException("Cannot find kogito types protobuf!", e);
         }
@@ -178,15 +189,15 @@ public class PersistenceGenerator extends AbstractGenerator {
 
             List<CompilationUnit> files = new ArrayList<>(marshallers);
 
-            variableMarshallers.add("org.kie.kogito.persistence.StringProtostreamBaseMarshaller");
-            variableMarshallers.add("org.kie.kogito.persistence.BooleanProtostreamBaseMarshaller");
-            variableMarshallers.add("org.kie.kogito.persistence.DateProtostreamBaseMarshaller");
-            variableMarshallers.add("org.kie.kogito.persistence.DoubleProtostreamBaseMarshaller");
-            variableMarshallers.add("org.kie.kogito.persistence.FloatProtostreamBaseMarshaller");
-            variableMarshallers.add("org.kie.kogito.persistence.IntegerProtostreamBaseMarshaller");
-            variableMarshallers.add("org.kie.kogito.persistence.LongProtostreamBaseMarshaller");
-            variableMarshallers.add("org.kie.kogito.persistence.InstantProtostreamBaseMarshaller");
-            variableMarshallers.add("org.kie.kogito.persistence.SerializableProtostreamBaseMarshaller");
+            variableMarshallers.add("org.jbpm.flow.serialization.marshaller.StringProtostreamBaseMarshaller");
+            variableMarshallers.add("org.jbpm.flow.serialization.marshaller.BooleanProtostreamBaseMarshaller");
+            variableMarshallers.add("org.jbpm.flow.serialization.marshaller.DateProtostreamBaseMarshaller");
+            variableMarshallers.add("org.jbpm.flow.serialization.marshaller.DoubleProtostreamBaseMarshaller");
+            variableMarshallers.add("org.jbpm.flow.serialization.marshaller.FloatProtostreamBaseMarshaller");
+            variableMarshallers.add("org.jbpm.flow.serialization.marshaller.IntegerProtostreamBaseMarshaller");
+            variableMarshallers.add("org.jbpm.flow.serialization.marshaller.LongProtostreamBaseMarshaller");
+            variableMarshallers.add("org.jbpm.flow.serialization.marshaller.InstantProtostreamBaseMarshaller");
+            variableMarshallers.add("org.jbpm.flow.serialization.marshaller.SerializableProtostreamBaseMarshaller");
 
             for (CompilationUnit unit : files) {
                 String packageName = unit.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
@@ -248,14 +259,14 @@ public class PersistenceGenerator extends AbstractGenerator {
             try {
                 //try to find an existing ObjectMarshallerStrategy descriptor in the classpath to be appended to the ProtoStream generated one
                 objectMarshallerStrategyServiceDescriptor =
-                        IOUtils.toString(getClass().getResourceAsStream("/META-INF/services/org.kie.kogito.serialization.process.ObjectMarshallerStrategy"), "UTF-8");
+                        new String(getClass().getResourceAsStream("/META-INF/services/org.jbpm.flow.serialization.ObjectMarshallerStrategy").readAllBytes(), StandardCharsets.UTF_8);
             } catch (Exception e) {
                 LOGGER.warn("No existing ObjectMarshallerStrategy found the the classpath to be included with the ProtoS generated one for SPI.");
             }
             objectMarshallerStrategyServiceDescriptor += "\n" + fqnProtoStreamMarshaller + "\n";
 
             generatedFiles.add(new GeneratedFile(GeneratedFileType.INTERNAL_RESOURCE,
-                    "META-INF/services/org.kie.kogito.serialization.process.ObjectMarshallerStrategy",
+                    "META-INF/services/org.jbpm.flow.serialization.ObjectMarshallerStrategy",
                     objectMarshallerStrategyServiceDescriptor));
         }
         return generatedFiles;

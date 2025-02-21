@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.tests;
 
@@ -39,6 +42,8 @@ import org.kie.kogito.uow.UnitOfWork;
 import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.kie.kogito.test.utils.ProcessInstancesTestUtils.assertEmpty;
+import static org.kie.kogito.test.utils.ProcessInstancesTestUtils.assertOne;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -83,7 +88,7 @@ public class SignalEventIT extends AbstractCodegenIT {
     public void testIntermediateSignalEventWithData() throws Exception {
         Map<TYPE, List<String>> resourcesTypeMap = new HashMap<>();
         resourcesTypeMap.put(TYPE.PROCESS, Collections.singletonList("signalevent/IntermediateCatchEventSignal.bpmn2"));
-        resourcesTypeMap.put(TYPE.RULES, Collections.singletonList("ruletask/BusinessRuleTask.drl"));
+        resourcesTypeMap.put(TYPE.USER_TASK, Collections.singletonList("signalevent/IntermediateCatchEventSignal.bpmn2"));
         Application app = generateCode(resourcesTypeMap);
         assertThat(app).isNotNull();
 
@@ -128,14 +133,14 @@ public class SignalEventIT extends AbstractCodegenIT {
         assertThat(result.toMap()).hasSize(2).containsKey("x");
         assertThat(result.toMap().get("x")).isEqualTo("test");
 
-        assertThat(p.instances().size()).isZero();
+        assertEmpty(p.instances());
     }
 
     @Test
     public void testBoundarySignalEventWithData() throws Exception {
         Map<TYPE, List<String>> resourcesTypeMap = new HashMap<>();
         resourcesTypeMap.put(TYPE.PROCESS, Collections.singletonList("signalevent/BoundarySignalEventOnTask.bpmn2"));
-        resourcesTypeMap.put(TYPE.RULES, Collections.singletonList("ruletask/BusinessRuleTask.drl"));
+        resourcesTypeMap.put(TYPE.USER_TASK, Collections.singletonList("signalevent/BoundarySignalEventOnTask.bpmn2"));
         Application app = generateCode(resourcesTypeMap);
         assertThat(app).isNotNull();
 
@@ -167,14 +172,14 @@ public class SignalEventIT extends AbstractCodegenIT {
         assertThat(result.toMap()).hasSize(1).containsKey("x");
         assertThat(result.toMap().get("x")).isEqualTo("test");
 
-        assertThat(p.instances().size()).isZero();
+        assertEmpty(p.instances());
     }
 
     @Test
     public void testBoundaryInterruptingSignalEventWithData() throws Exception {
         Map<TYPE, List<String>> resourcesTypeMap = new HashMap<>();
         resourcesTypeMap.put(TYPE.PROCESS, Collections.singletonList("signalevent/BoundaryInterruptingSignalEventOnTask.bpmn2"));
-        resourcesTypeMap.put(TYPE.RULES, Collections.singletonList("ruletask/BusinessRuleTask.drl"));
+        resourcesTypeMap.put(TYPE.USER_TASK, Collections.singletonList("signalevent/BoundaryInterruptingSignalEventOnTask.bpmn2"));
         Application app = generateCode(resourcesTypeMap);
         assertThat(app).isNotNull();
 
@@ -195,14 +200,14 @@ public class SignalEventIT extends AbstractCodegenIT {
         assertThat(result.toMap()).hasSize(1).containsKey("x");
         assertThat(result.toMap().get("x")).isEqualTo("test");
 
-        assertThat(p.instances().size()).isZero();
+        assertEmpty(p.instances());
     }
 
     @Test
     public void testIntermediateSignalEventWithDataControlledByUnitOfWork() throws Exception {
         Map<TYPE, List<String>> resourcesTypeMap = new HashMap<>();
         resourcesTypeMap.put(TYPE.PROCESS, Collections.singletonList("signalevent/IntermediateCatchEventSignal.bpmn2"));
-        resourcesTypeMap.put(TYPE.RULES, Collections.singletonList("ruletask/BusinessRuleTask.drl"));
+        resourcesTypeMap.put(TYPE.USER_TASK, Collections.singletonList("signalevent/IntermediateCatchEventSignal.bpmn2"));
         Application app = generateCode(resourcesTypeMap);
         assertThat(app).isNotNull();
         // create first unit of work
@@ -220,7 +225,7 @@ public class SignalEventIT extends AbstractCodegenIT {
 
         uow.end();
         // after the unit of work is ended process instance shows up in the list
-        assertThat(p.instances().size()).isEqualTo(1);
+        assertOne(p.instances());
 
         uow = app.unitOfWorkManager().newUnitOfWork();
         uow.start();
@@ -243,9 +248,9 @@ public class SignalEventIT extends AbstractCodegenIT {
         assertThat(result.toMap().get("x")).isEqualTo("test");
 
         // since the unit of work is not ended yet there is still instance visible
-        assertThat(p.instances().size()).isEqualTo(1);
+        assertOne(p.instances());
         uow.end();
         // after unit of work is ended instance is gone from the list
-        assertThat(p.instances().size()).isZero();
+        assertEmpty(p.instances());
     }
 }

@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.compiler;
 
@@ -19,20 +22,21 @@ import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import javax.xml.parsers.FactoryConfigurationError;
 
+import org.drools.base.definitions.InternalKnowledgePackage;
+import org.drools.base.definitions.ProcessPackage;
+import org.drools.base.definitions.ResourceTypePackageRegistry;
 import org.drools.compiler.builder.impl.KnowledgeBuilderConfigurationImpl;
 import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
 import org.drools.compiler.compiler.Dialect;
 import org.drools.compiler.compiler.DialectCompiletimeRegistry;
 import org.drools.compiler.compiler.PackageRegistry;
-import org.drools.core.definitions.InternalKnowledgePackage;
-import org.drools.core.definitions.ProcessPackage;
-import org.drools.core.definitions.ResourceTypePackageRegistry;
 import org.drools.drl.ast.descr.ActionDescr;
 import org.drools.drl.ast.descr.PackageDescr;
 import org.drools.drl.ast.descr.ProcessDescr;
@@ -40,8 +44,8 @@ import org.drools.drl.parser.DroolsParserException;
 import org.drools.drl.parser.ParserError;
 import org.drools.mvel.java.JavaDialect;
 import org.jbpm.assembler.DuplicateProcess;
-import org.jbpm.compiler.xml.ProcessSemanticModule;
 import org.jbpm.compiler.xml.XmlProcessReader;
+import org.jbpm.compiler.xml.compiler.SemanticKnowledgeBuilderConfigurationImpl;
 import org.jbpm.process.builder.ProcessBuildContext;
 import org.jbpm.process.builder.ProcessNodeBuilder;
 import org.jbpm.process.builder.ProcessNodeBuilderRegistry;
@@ -75,7 +79,6 @@ import org.kie.api.definition.process.NodeContainer;
 import org.kie.api.definition.process.Process;
 import org.kie.api.definition.process.WorkflowProcess;
 import org.kie.api.io.Resource;
-import org.kie.internal.builder.KnowledgeBuilder;
 import org.kie.internal.builder.KnowledgeBuilderResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,18 +92,10 @@ public class ProcessBuilderImpl implements org.drools.compiler.compiler.ProcessB
     private static final Logger logger = LoggerFactory.getLogger(ProcessBuilderImpl.class);
 
     private KnowledgeBuilderImpl knowledgeBuilder;
-    private final List<KnowledgeBuilderResult> errors = new ArrayList<KnowledgeBuilderResult>();
+    private final List<KnowledgeBuilderResult> errors = new ArrayList<>();
 
     public ProcessBuilderImpl(KnowledgeBuilderImpl packageBuilder) {
         this.knowledgeBuilder = packageBuilder;
-        configurePackageBuilder(packageBuilder);
-    }
-
-    public void configurePackageBuilder(KnowledgeBuilder packageBuilder) {
-        KnowledgeBuilderConfigurationImpl conf = ((KnowledgeBuilderImpl) packageBuilder).getBuilderConfiguration();
-        if (conf.getSemanticModules().getSemanticModule(ProcessSemanticModule.URI) == null) {
-            conf.addSemanticModule(new ProcessSemanticModule());
-        }
     }
 
     public List<KnowledgeBuilderResult> getErrors() {
@@ -257,7 +252,7 @@ public class ProcessBuilderImpl implements org.drools.compiler.compiler.ProcessB
                         context);
             }
 
-            if ("true".equals(System.getProperty("jbpm.enable.multi.con"))) {
+            if (Boolean.parseBoolean((String) ((NodeImpl) node).getProcess().getMetaData().get("jbpm.enable.multi.con"))) {
                 builder = ProcessNodeBuilderRegistry.INSTANCE.getNodeBuilder(NodeImpl.class);
                 if (builder != null) {
                     builder.build(process, processDescr, context, node);
@@ -269,7 +264,7 @@ public class ProcessBuilderImpl implements org.drools.compiler.compiler.ProcessB
     public List<Process> addProcessFromXml(final Resource resource) throws IOException {
         Reader reader = resource.getReader();
         KnowledgeBuilderConfigurationImpl configuration = knowledgeBuilder.getBuilderConfiguration();
-        XmlProcessReader xmlReader = new XmlProcessReader(configuration.getSemanticModules(), knowledgeBuilder.getRootClassLoader());
+        XmlProcessReader xmlReader = new XmlProcessReader(((SemanticKnowledgeBuilderConfigurationImpl) configuration).getSemanticModules(), knowledgeBuilder.getRootClassLoader());
 
         List<Process> processes = null;
 
@@ -336,11 +331,14 @@ public class ProcessBuilderImpl implements org.drools.compiler.compiler.ProcessB
                 Split split = (Split) nodes[i];
                 if (split.getType() == Split.TYPE_XOR || split.getType() == Split.TYPE_OR) {
                     for (Connection connection : split.getDefaultOutgoingConnections()) {
-                        Constraint constraint = split.getConstraint(connection);
-                        if (constraint != null && "rule".equals(constraint.getType())) {
-                            builder.append(createSplitRule(process,
-                                    connection,
-                                    split.getConstraint(connection).getConstraint()));
+                        Collection<Constraint> constraints = split.getConstraints(connection);
+                        if (constraints != null) {
+                            for (Constraint constraint : constraints)
+                                if (constraint != null && "rule".equals(constraint.getType())) {
+                                    builder.append(createSplitRule(process,
+                                            connection,
+                                            constraint.getConstraint()));
+                                }
                         }
                     }
                 }
@@ -388,10 +386,10 @@ public class ProcessBuilderImpl implements org.drools.compiler.compiler.ProcessB
             return "";
         } else {
             return "rule \"RuleFlowStateNode-" + process.getId() + "-" + state.getUniqueId() + "-" +
-                    key.getNodeId() + "-" + key.getToType() + "\" @Propagation(EAGER) \n" +
+                    key.getNodeId().toExternalFormat() + "-" + key.getToType() + "\" @Propagation(EAGER) \n" +
                     "      ruleflow-group \"DROOLS_SYSTEM\" \n" +
                     "    when \n" +
-                    "      " + state.getConstraints().get(key).getConstraint() + "\n" +
+                    "      " + state.internalGetConstraint(key).getConstraint() + "\n" +
                     "    then \n" +
                     "end \n\n";
         }
@@ -431,11 +429,13 @@ public class ProcessBuilderImpl implements org.drools.compiler.compiler.ProcessB
     }
 
     private String createStateRules(Process process, StateNode state) {
-        String result = "";
-        for (Map.Entry<ConnectionRef, Constraint> entry : state.getConstraints().entrySet()) {
-            result += createStateRule(process, state, entry.getKey(), entry.getValue());
+        StringBuilder result = new StringBuilder();
+        for (Map.Entry<ConnectionRef, Collection<Constraint>> entry : state.getConstraints().entrySet()) {
+            for (Constraint constraint : entry.getValue()) {
+                result.append(createStateRule(process, state, entry.getKey(), constraint));
+            }
         }
-        return result;
+        return result.toString();
     }
 
     private String createStartConstraintRule(Process process, NodeContainer nodeContainer,
@@ -444,24 +444,24 @@ public class ProcessBuilderImpl implements org.drools.compiler.compiler.ProcessB
             return createEventSubprocessStateRule(process, (EventSubProcessNode) nodeContainer, trigger);
         }
 
-        String result =
-                "rule \"RuleFlow-Start-" + process.getId() + "\" @Propagation(EAGER) \n" +
+        StringBuilder result =
+                new StringBuilder("rule \"RuleFlow-Start-" + process.getId() + "\" @Propagation(EAGER) \n" +
                         (trigger.getHeader() == null ? "" : "        " + trigger.getHeader() + " \n") +
                         "    when\n" +
                         "        " + trigger.getConstraint() + "\n" +
-                        "    then\n";
+                        "    then\n");
         Map<String, String> inMappings = trigger.getInMappings();
         if (inMappings != null && !inMappings.isEmpty()) {
-            result += "        java.util.Map params = new java.util.HashMap();\n";
+            result.append("        java.util.Map params = new java.util.HashMap();\n");
             for (Map.Entry<String, String> entry : inMappings.entrySet()) {
-                result += "        params.put(\"" + entry.getValue() + "\", " + entry.getKey() + ");\n";
+                result.append("        params.put(\"").append(entry.getValue()).append("\", ").append(entry.getKey()).append(");\n");
             }
-            result += "        ((org.jbpm.process.instance.ProcessRuntimeImpl)((org.drools.core.common.InternalWorkingMemory)kcontext.getKieRuntime()).getProcessRuntime()).startProcess(\""
-                    + process.getId() + "\", params, \"conditional\");\n" + "end\n\n";
+            result.append("        ((org.jbpm.process.instance.ProcessRuntimeImpl)((org.drools.core.common.InternalWorkingMemory)kcontext.getKieRuntime()).getProcessRuntime()).startProcess(\"")
+                    .append(process.getId()).append("\", params, \"conditional\");\n").append("end\n\n");
         } else {
-            result += "        ((org.jbpm.process.instance.ProcessRuntimeImpl)((org.drools.core.common.InternalWorkingMemory)kcontext.getKieRuntime()).getProcessRuntime()).startProcess(\""
-                    + process.getId() + "\", null, \"conditional\");\n" + "end\n\n";
+            result.append("        ((org.jbpm.process.instance.ProcessRuntimeImpl)((org.drools.core.common.InternalWorkingMemory)kcontext.getKieRuntime()).getProcessRuntime()).startProcess(\"")
+                    .append(process.getId()).append("\", null, \"conditional\");\n").append("end\n\n");
         }
-        return result;
+        return result.toString();
     }
 }

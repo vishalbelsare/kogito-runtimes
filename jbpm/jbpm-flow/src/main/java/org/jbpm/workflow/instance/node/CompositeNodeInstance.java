@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.workflow.instance.node;
 
@@ -38,8 +41,10 @@ import org.jbpm.workflow.instance.WorkflowProcessInstance;
 import org.jbpm.workflow.instance.impl.NodeInstanceFactory;
 import org.jbpm.workflow.instance.impl.NodeInstanceFactoryRegistry;
 import org.jbpm.workflow.instance.impl.NodeInstanceImpl;
+import org.jbpm.workflow.instance.impl.WorkflowProcessInstanceImpl;
 import org.kie.api.definition.process.Connection;
 import org.kie.api.definition.process.NodeContainer;
+import org.kie.api.definition.process.WorkflowElementIdentifier;
 import org.kie.kogito.internal.process.runtime.KogitoNodeInstance;
 import org.kie.kogito.internal.process.runtime.KogitoNodeInstanceContainer;
 
@@ -50,7 +55,7 @@ import static org.kie.kogito.internal.process.runtime.KogitoProcessInstance.STAT
 
 /**
  * Runtime counterpart of a composite node.
- * 
+ *
  */
 public class CompositeNodeInstance extends StateBasedNodeInstance implements NodeInstanceContainer, EventNodeInstanceInterface, EventBasedNodeInstanceInterface {
 
@@ -124,7 +129,7 @@ public class CompositeNodeInstance extends StateBasedNodeInstance implements Nod
             for (Connection connection : connections) {
                 if ((connection.getFrom() instanceof CompositeNode.CompositeNodeStart) &&
                         (from == null ||
-                                ((CompositeNode.CompositeNodeStart) connection.getFrom()).getInNode().getId() == from.getNodeId())) {
+                                ((CompositeNode.CompositeNodeStart) connection.getFrom()).getInNode().getId().equals(from.getNodeId()))) {
                     NodeInstance nodeInstance = getNodeInstance(connection.getFrom());
                     nodeInstance.trigger(null, nodeAndType.getType());
                     return;
@@ -169,24 +174,24 @@ public class CompositeNodeInstance extends StateBasedNodeInstance implements Nod
         if (cancelRemainingInstances) {
             while (!nodeInstances.isEmpty()) {
                 NodeInstance nodeInstance = nodeInstances.get(0);
-                nodeInstance.cancel();
+                nodeInstance.cancel(CancelType.OBSOLETE);
             }
         }
     }
 
     @Override
-    public void cancel() {
+    public void cancel(CancelType cancelType) {
         while (!nodeInstances.isEmpty()) {
             NodeInstance nodeInstance = nodeInstances.get(0);
-            nodeInstance.cancel();
+            nodeInstance.cancel(cancelType);
         }
-        super.cancel();
+        super.cancel(cancelType);
     }
 
     @Override
     public void addNodeInstance(final NodeInstance nodeInstance) {
         if (nodeInstance.getStringId() == null) {
-            // assign new id only if it does not exist as it might already be set by marshalling 
+            // assign new id only if it does not exist as it might already be set by marshalling
             // it's important to keep same ids of node instances as they might be references e.g. exclusive group
             ((NodeInstanceImpl) nodeInstance).setId(UUID.randomUUID().toString());
         }
@@ -200,7 +205,7 @@ public class CompositeNodeInstance extends StateBasedNodeInstance implements Nod
 
     @Override
     public Collection<org.kie.api.runtime.process.NodeInstance> getNodeInstances() {
-        return new ArrayList<>(getNodeInstances(false));
+        return Collections.unmodifiableCollection(nodeInstances);
     }
 
     @Override
@@ -261,9 +266,9 @@ public class CompositeNodeInstance extends StateBasedNodeInstance implements Nod
     }
 
     @Override
-    public NodeInstance getFirstNodeInstance(final long nodeId) {
+    public NodeInstance getFirstNodeInstance(WorkflowElementIdentifier nodeId) {
         for (final NodeInstance nodeInstance : this.nodeInstances) {
-            if (nodeInstance.getNodeId() == nodeId && nodeInstance.getLevel() == getCurrentLevel()) {
+            if (nodeInstance.getNodeId().equals(nodeId) && nodeInstance.getLevel() == getCurrentLevel()) {
                 return nodeInstance;
             }
         }
@@ -301,19 +306,19 @@ public class CompositeNodeInstance extends StateBasedNodeInstance implements Nod
 
     @Override
     public void signalEvent(String type, Object event, Function<String, Object> varResolver) {
-        List<NodeInstance> currentView = new ArrayList<>(this.nodeInstances);
+        List<org.kie.api.runtime.process.NodeInstance> currentView = new ArrayList<>(this.nodeInstances);
         super.signalEvent(type, event);
 
         for (org.kie.api.definition.process.Node node : getCompositeNode().internalGetNodes()) {
             if (node instanceof EventNodeInterface
-                    && ((EventNodeInterface) node).acceptsEvent(type, event, varName -> this.getVariable(varName))) {
+                    && ((EventNodeInterface) node).acceptsEvent(type, event, ((WorkflowProcessInstanceImpl) this.getProcessInstance()).getEventFilterResolver(this, node, currentView))) {
                 if (node instanceof EventNode && ((EventNode) node).getFrom() == null || node instanceof EventSubProcessNode) {
                     EventNodeInstanceInterface eventNodeInstance = (EventNodeInstanceInterface) getNodeInstance(node);
                     eventNodeInstance.signalEvent(type, event, varResolver);
                 } else {
-                    List<NodeInstance> nodeInstances = getNodeInstances(node.getId(), currentView);
+                    List<org.kie.api.runtime.process.NodeInstance> nodeInstances = getNodeInstances(node.getId(), currentView);
                     if (nodeInstances != null && !nodeInstances.isEmpty()) {
-                        for (NodeInstance nodeInstance : nodeInstances) {
+                        for (org.kie.api.runtime.process.NodeInstance nodeInstance : nodeInstances) {
                             ((EventNodeInstanceInterface) nodeInstance).signalEvent(type, event, varResolver);
                         }
                     }
@@ -340,20 +345,20 @@ public class CompositeNodeInstance extends StateBasedNodeInstance implements Nod
         this.signalEvent(type, event, varName -> this.getVariable(varName));
     }
 
-    public List<NodeInstance> getNodeInstances(final long nodeId) {
+    public List<NodeInstance> getNodeInstances(WorkflowElementIdentifier nodeId) {
         List<NodeInstance> result = new ArrayList<>();
         for (final NodeInstance nodeInstance : this.nodeInstances) {
-            if (nodeInstance.getNodeId() == nodeId) {
+            if (nodeInstance.getNodeId().equals(nodeId)) {
                 result.add(nodeInstance);
             }
         }
         return result;
     }
 
-    public List<NodeInstance> getNodeInstances(final long nodeId, List<NodeInstance> currentView) {
-        List<NodeInstance> result = new ArrayList<>();
-        for (final NodeInstance nodeInstance : currentView) {
-            if (nodeInstance.getNodeId() == nodeId) {
+    public List<org.kie.api.runtime.process.NodeInstance> getNodeInstances(WorkflowElementIdentifier nodeId, List<org.kie.api.runtime.process.NodeInstance> currentView) {
+        List<org.kie.api.runtime.process.NodeInstance> result = new ArrayList<>();
+        for (org.kie.api.runtime.process.NodeInstance nodeInstance : currentView) {
+            if (nodeInstance.getNodeId().equals(nodeId)) {
                 result.add(nodeInstance);
             }
         }
@@ -464,6 +469,7 @@ public class CompositeNodeInstance extends StateBasedNodeInstance implements Nod
         this.currentLevel = currentLevel;
     }
 
+    @Override
     public Map<String, Integer> getIterationLevels() {
         return iterationLevels;
     }

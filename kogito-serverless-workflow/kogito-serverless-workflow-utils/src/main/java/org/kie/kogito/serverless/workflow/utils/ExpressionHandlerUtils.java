@@ -1,37 +1,39 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.serverless.workflow.utils;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 
+import org.jbpm.ruleflow.core.Metadata;
 import org.kie.kogito.internal.process.runtime.KogitoProcessContext;
-import org.kie.kogito.jackson.utils.JsonObjectUtils;
 import org.kie.kogito.jackson.utils.MergeUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import io.serverlessworkflow.api.Workflow;
 import io.serverlessworkflow.api.functions.FunctionDefinition;
 import io.serverlessworkflow.api.functions.FunctionDefinition.Type;
-import io.serverlessworkflow.api.workflow.Constants;
 
 public class ExpressionHandlerUtils {
 
@@ -43,58 +45,25 @@ public class ExpressionHandlerUtils {
     private static final String LEGACY_EXPR_PREFIX = "{{";
     private static final String LEGACY_EXPR_SUFFIX = "}}";
     private static final String FUNCTION_REFERENCE = "fn:";
-    protected static final String SECRET_MAGIC = "$SECRET.";
-    protected static final String CONST_MAGIC = "$CONST.";
-    protected static final String CONTEXT_MAGIC = "$WORKFLOW.";
-    private static final Collection<String> MAGIC_WORDS = Arrays.asList(SECRET_MAGIC, CONST_MAGIC, CONTEXT_MAGIC);
+    public static final String SECRET_MAGIC = "SECRET";
+    public static final String CONST_MAGIC = "CONST";
+    public static final String CONTEXT_MAGIC = "WORKFLOW";
 
-    public static String prepareExpr(String expr, Optional<KogitoProcessContext> context) {
-        expr = replaceMagic(expr, SECRET_MAGIC, ExpressionHandlerUtils::getSecret);
-        return context.isPresent() ? replaceMagic(expr, CONTEXT_MAGIC, key -> KogitoProcessContextResolver.get().readKey(context.get(), key)) : expr;
+    public static JsonNode getConstants(KogitoProcessContext context) {
+        JsonNode node = (JsonNode) context.getProcessInstance().getProcess().getMetaData().get(Metadata.CONSTANTS);
+        return node == null ? NullNode.instance : node;
     }
 
-    public static Collection<String> getMagicWords() {
-        return MAGIC_WORDS;
+    public static Optional<String> getOptionalSecret(String key) {
+        return ConfigResolverHolder.getConfigResolver().getConfigProperty(key, String.class);
     }
 
-    private static String getSecret(String key) {
-        return ConfigResolverHolder.getConfigResolver().getConfigProperty(key, String.class, null);
+    public static String getSecret(String key) {
+        return getOptionalSecret(key).orElse(null);
     }
 
-    private static Object getConstant(String key, Constants constants) {
-        Objects.requireNonNull(constants, "Constants has not been specified, key " + key + "cannot be replaced");
-        JsonNode result = constants.getConstantsDef();
-        for (String name : key.split("\\.")) {
-            result = result.get(name);
-        }
-        return JsonObjectUtils.toJavaValue(result);
-    }
-
-    private static <T extends Object> String replaceMagic(String expr, String magic, Function<String, T> replacer) {
-        int indexOf;
-        while ((indexOf = expr.indexOf(magic)) != -1) {
-            String key = extractKey(expr, indexOf + magic.length());
-            T value = replacer.apply(key);
-            if (value != null) {
-                expr = expr.replace(magic + key, value.toString());
-            } else {
-                break;
-            }
-        }
-        return expr;
-    }
-
-    private static String extractKey(String expr, int indexOf) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = indexOf; i < expr.length(); i++) {
-            char ch = expr.charAt(i);
-            if (Character.isJavaIdentifierPart(ch) || ch == '.') {
-                sb.append(ch);
-            } else {
-                break;
-            }
-        }
-        return sb.toString();
+    public static Function<String, Object> getContextFunction(KogitoProcessContext context) {
+        return k -> KogitoProcessContextResolver.get().readKey(context, k);
     }
 
     public static String trimExpr(String expr) {
@@ -128,23 +97,53 @@ public class ExpressionHandlerUtils {
                                 .map(FunctionDefinition::getOperation)
                                 .orElseThrow(() -> new IllegalArgumentException("Cannot find function " + functionName)));
             }
-            return replaceMagic(candidate, CONST_MAGIC, key -> getConstant(key, workflow.getConstants()));
+            return candidate;
         }
         return expr;
     }
 
     public static void assign(JsonNode context, JsonNode target, JsonNode value, String expr) {
+        JsonNode merged = MergeUtils.merge(value, target);
         if (context.isObject()) {
-            Optional<String> varName = fallbackVarToName(expr);
-            if (varName.isPresent()) {
-                JsonObjectUtils.addToNode(varName.get(), MergeUtils.merge(value, target), (ObjectNode) context);
+            ObjectNode root = (ObjectNode) context;
+            StringBuilder sb = new StringBuilder();
+            List<String> properties = new ArrayList<>();
+            for (int i = expr.length() - 1; i >= 0; i--) {
+                char c = expr.charAt(i);
+                if (Character.isJavaIdentifierPart(c)) {
+                    sb.insert(0, expr.charAt(i));
+                } else if (c == '.') {
+                    if (sb.length() == 0) {
+                        break;
+                    }
+                    properties.add(0, sb.toString());
+                    sb = new StringBuilder();
+                } else {
+                    if (sb.length() > 0) {
+                        properties.add(0, sb.toString());
+                    }
+                    break;
+                }
+            }
+            if (!properties.isEmpty()) {
+                int size = properties.size() - 1;
+                for (int i = 0; i < size; i++) {
+                    root = addObjectNode(root, properties.get(i));
+                }
+                root.set(properties.get(size), merged);
             }
         }
     }
 
-    public static Optional<String> fallbackVarToName(String expr) {
-        int indexOf = expr.lastIndexOf('.');
-        return indexOf < 0 ? Optional.empty() : Optional.of(expr.substring(indexOf + 1));
+    private static ObjectNode addObjectNode(ObjectNode target, String propName) {
+        if (target.has(propName)) {
+            JsonNode childNode = target.get(propName);
+            if (childNode.isObject()) {
+                return (ObjectNode) childNode;
+            }
+        }
+        ObjectNode newNode = target.objectNode();
+        target.set(propName, newNode);
+        return newNode;
     }
-
 }

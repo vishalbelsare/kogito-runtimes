@@ -1,17 +1,20 @@
 /*
- * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.compiler.canonical;
 
@@ -26,7 +29,7 @@ import org.jbpm.process.core.ContextContainer;
 import org.jbpm.process.core.context.variable.Variable;
 import org.jbpm.process.core.context.variable.VariableScope;
 import org.jbpm.workflow.core.impl.WorkflowProcessImpl;
-import org.jbpm.workflow.core.node.HumanTaskNode;
+import org.jbpm.workflow.core.node.WorkItemNode;
 import org.kie.api.definition.process.Node;
 import org.kie.api.definition.process.WorkflowProcess;
 import org.kie.kogito.ProcessInput;
@@ -50,7 +53,7 @@ import com.github.javaparser.ast.type.ClassOrInterfaceType;
 
 import static com.github.javaparser.StaticJavaParser.parse;
 import static com.github.javaparser.StaticJavaParser.parseClassOrInterfaceType;
-import static org.drools.util.StringUtils.ucFirst;
+import static org.kie.kogito.internal.utils.ConversionUtils.sanitizeClassName;
 
 public class ProcessToExecModelGenerator {
 
@@ -59,17 +62,25 @@ public class ProcessToExecModelGenerator {
 
     private static final String PROCESS_CLASS_SUFFIX = "Process";
     private static final String MODEL_CLASS_SUFFIX = "Model";
-    private static final String PROCESS_TEMPLATE_FILE = "/class-templates/ProcessTemplate.java";
+    private static final String PROCESS_TEMPLATE_FILE = "ProcessTemplate.java";
     private static final String PROCESS_NAME_PARAM = "processName";
 
     private final ProcessVisitor processVisitor;
+    private ClassLoader contextClassLoader;
+    private String classTemplate;
 
     public ProcessToExecModelGenerator(ClassLoader contextClassLoader) {
+        this(PROCESS_TEMPLATE_FILE, contextClassLoader);
+    }
+
+    public ProcessToExecModelGenerator(String classTemplate, ClassLoader contextClassLoader) {
+        this.classTemplate = classTemplate;
+        this.contextClassLoader = contextClassLoader;
         this.processVisitor = new ProcessVisitor(contextClassLoader);
     }
 
     public ProcessMetaData generate(WorkflowProcess process) {
-        CompilationUnit parsedClazzFile = parse(this.getClass().getResourceAsStream(PROCESS_TEMPLATE_FILE));
+        CompilationUnit parsedClazzFile = parse(TemplateHelper.findTemplate(contextClassLoader, this.classTemplate));
         parsedClazzFile.setPackageDeclaration(process.getPackageName());
         Optional<ClassOrInterfaceDeclaration> processClazzOptional = parsedClazzFile.findFirst(
                 ClassOrInterfaceDeclaration.class,
@@ -81,11 +92,16 @@ public class ProcessToExecModelGenerator {
             throw new NoSuchElementException("Cannot find class declaration in the template");
         }
         ClassOrInterfaceDeclaration processClazz = processClazzOptional.get();
-        processClazz.setName(ucFirst(extractedProcessId + PROCESS_CLASS_SUFFIX));
+        processClazz.setName(sanitizeClassName(extractedProcessId + PROCESS_CLASS_SUFFIX));
         String packageName = parsedClazzFile.getPackageDeclaration().map(NodeWithName::getNameAsString).orElse(null);
         ProcessMetaData metadata =
                 new ProcessMetaData(process.getId(), extractedProcessId, process.getName(), process.getVersion(),
                         packageName, processClazz.getNameAsString());
+
+        if (process.getType().equals(KogitoWorkflowProcess.SW_TYPE)) {
+            metadata.setModelClassName("JsonNodeModel");
+            metadata.setModelPackageName("org.kie.kogito.serverless.workflow.models");
+        }
 
         Optional<MethodDeclaration> processMethod = parsedClazzFile.findFirst(MethodDeclaration.class, sl -> sl
                 .getName()
@@ -224,37 +240,32 @@ public class ProcessToExecModelGenerator {
     }
 
     public static String extractModelClassName(String processId) {
-        return ucFirst(extractProcessId(processId) + MODEL_CLASS_SUFFIX);
+        return sanitizeClassName(extractProcessId(processId) + MODEL_CLASS_SUFFIX);
     }
 
-    public List<UserTaskModelMetaData> generateUserTaskModel(WorkflowProcess process) {
+    public List<WorkItemModelMetaData> generateWorkItemModel(WorkflowProcess process) {
         String packageName = process.getPackageName();
-        List<UserTaskModelMetaData> userTaskModels = new ArrayList<>();
+        List<WorkItemModelMetaData> workItemTaskModels = new ArrayList<>();
 
         VariableScope variableScope = (VariableScope) ((org.jbpm.process.core.Process) process).getDefaultContext(
                 VariableScope.VARIABLE_SCOPE);
 
         for (Node node : ((WorkflowProcessImpl) process).getNodesRecursively()) {
-            if (node instanceof HumanTaskNode) {
-                HumanTaskNode humanTaskNode = (HumanTaskNode) node;
-                VariableScope nodeVariableScope = (VariableScope) ((ContextContainer) humanTaskNode
+            if (node instanceof WorkItemNode workItemNode) {
+                VariableScope nodeVariableScope = (VariableScope) ((ContextContainer) workItemNode
                         .getParentContainer()).getDefaultContext(VariableScope.VARIABLE_SCOPE);
                 if (nodeVariableScope == null) {
                     nodeVariableScope = variableScope;
                 }
-                userTaskModels.add(new UserTaskModelMetaData(packageName, variableScope, nodeVariableScope,
-                        humanTaskNode, process.getId()));
+                workItemTaskModels.add(new WorkItemModelMetaData(packageName, variableScope, nodeVariableScope,
+                        workItemNode, process.getId()));
             }
         }
 
-        return userTaskModels;
+        return workItemTaskModels;
     }
 
     public static String extractProcessId(String processId) {
-        if (processId.contains(".")) {
-            return processId.substring(processId.lastIndexOf('.') + 1);
-        }
-
-        return processId;
+        return processId.contains(".") ? processId.substring(processId.lastIndexOf('.') + 1) : processId;
     }
 }

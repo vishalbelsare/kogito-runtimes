@@ -1,82 +1,203 @@
 /*
- * Copyright 2020 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.serverless.workflow.utils;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.Reader;
-import java.net.URI;
+import java.io.Writer;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-import org.drools.codegen.common.GeneratedFile;
-import org.drools.codegen.common.GeneratedFileType;
+import org.jbpm.compiler.canonical.ModelMetaData;
+import org.jbpm.compiler.canonical.VariableDeclarations;
+import org.kie.api.definition.process.WorkflowProcess;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
-import org.kie.kogito.serverless.workflow.io.URIContentLoaderFactory;
-import org.kie.kogito.serverless.workflow.parser.ParserContext;
+import org.kie.kogito.internal.process.runtime.KogitoWorkflowProcess;
+import org.kie.kogito.serverless.workflow.extensions.FunctionNamespaces;
+import org.kie.kogito.serverless.workflow.extensions.OutputSchema;
+import org.kie.kogito.serverless.workflow.extensions.URIDefinitions;
+import org.kie.kogito.serverless.workflow.models.JsonNodeModel;
 import org.kie.kogito.serverless.workflow.suppliers.ConfigWorkItemSupplier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.javaparser.ast.expr.Expression;
 
 import io.serverlessworkflow.api.Workflow;
+import io.serverlessworkflow.api.deserializers.ExtensionDeserializer;
 import io.serverlessworkflow.api.functions.FunctionDefinition;
-import io.serverlessworkflow.api.functions.FunctionDefinition.Type;
+import io.serverlessworkflow.api.interfaces.Extension;
 import io.serverlessworkflow.api.mapper.BaseObjectMapper;
 import io.serverlessworkflow.api.mapper.JsonObjectMapper;
 import io.serverlessworkflow.api.mapper.YamlObjectMapper;
+import io.serverlessworkflow.api.serializers.ExtensionSerializer;
 
 public class ServerlessWorkflowUtils {
 
-    private static final Logger logger = LoggerFactory.getLogger(ServerlessWorkflowUtils.class);
-
+    public static final String FAIL_ON_ERROR_PROPERTY = "kogito.codegen.process.failOnError";
     public static final String API_KEY_PREFIX = "api_key_prefix";
     public static final String API_KEY = "api_key";
     public static final String ACCESS_TOKEN = "access_token";
     public static final String USER_PROP = "username";
     public static final String PASSWORD_PROP = "password";
+    public static final String OPERATION_SEPARATOR = "#";
+    public static final String DEFS_PREFIX = "#/$defs/";
+    private static final String BASE_URI = "baseURI";
 
+    /**
+     * @deprecated Replaced by WorkflowFormat enum
+     */
+    @Deprecated
     public static final String DEFAULT_WORKFLOW_FORMAT = "json";
+    /**
+     * @deprecated Replaced by WorkflowFormat enum
+     */
+    @Deprecated
     public static final String ALTERNATE_WORKFLOW_FORMAT = "yml";
-    private static final String APP_PROPERTIES_BASE = "kogito.sw.";
-    private static final String OPEN_API_PROPERTIES_BASE = "org.kogito.openapi.client.";
+    public static final String APP_PROPERTIES_BASE = "kogito.sw.";
 
-    private static final String APP_PROPERTIES_FUNCTIONS_BASE = APP_PROPERTIES_BASE + "functions.";
-    private static final String APP_PROPERTIES_STATES_BASE = "states.";
+    public static final String APP_PROPERTIES_FUNCTIONS_BASE = APP_PROPERTIES_BASE + "functions.";
+
+    private static final String REGEX_NO_EXT = "[.][^.]+$";
+
+    private static final BaseObjectMapper yamlReaderMapper = deserializer(new YamlObjectMapper());
+    private static final BaseObjectMapper jsonReaderMapper = deserializer(new JsonObjectMapper());
+
+    private static final BaseObjectMapper yamlWriterMapper = serializer(new YamlObjectMapper());
+    private static final BaseObjectMapper jsonWriterMapper = serializer(new JsonObjectMapper());
 
     private ServerlessWorkflowUtils() {
     }
 
-    public static BaseObjectMapper getObjectMapper(String workflowFormat) {
-        return ALTERNATE_WORKFLOW_FORMAT.equals(workflowFormat) ? new YamlObjectMapper() : new JsonObjectMapper();
+    /**
+     * Read a workflow.
+     * 
+     * @param reader Reader instance holding workflow data
+     * @param workflowFormat Format of the data, json or yaml.
+     * @return Workflow instance
+     * @throws IOException
+     */
+    public static Workflow getWorkflow(Reader reader, WorkflowFormat workflowFormat) throws IOException {
+        BaseObjectMapper objectMapper = workflowFormat == WorkflowFormat.YAML ? yamlReaderMapper : jsonReaderMapper;
+        return objectMapper.readValue(reader, Workflow.class);
     }
 
-    private static String getFunctionPrefix(FunctionDefinition function) {
+    public static Workflow getWorkflow(Path path) throws IOException {
+        try (Reader reader = Files.newBufferedReader(path)) {
+            return withBaseURI(getWorkflow(reader, WorkflowFormat.fromFileName(path.getFileName())), path.toString());
+        }
+    }
+
+    public static Workflow getWorkflow(URL url) throws IOException {
+        try (Reader reader = new InputStreamReader(url.openStream())) {
+            return withBaseURI(getWorkflow(reader, WorkflowFormat.fromFileName(url.getPath())), url.toString());
+        }
+    }
+
+    /**
+     * Kept for backward compatibility purposes
+     * 
+     * @deprecated Rather than the string for format use WorkflowFormat enumeration to indicate if the flow is yaml or json.
+     */
+    @Deprecated
+    public static Workflow getWorkflow(Reader reader, String workflowFormat) throws IOException {
+        return getWorkflow(reader, ALTERNATE_WORKFLOW_FORMAT.equals(workflowFormat) ? WorkflowFormat.YAML : WorkflowFormat.JSON);
+    }
+
+    /**
+     * Write a workflow
+     * 
+     * @param workflow Workflow definition
+     * @param writer Target output reader
+     * @param workflowFormat Format of the data, json or yaml.
+     * @throws IOException
+     */
+    public static void writeWorkflow(Workflow workflow, Writer writer, WorkflowFormat workflowFormat) throws IOException {
+        ObjectMapper objectMapper = workflowFormat == WorkflowFormat.YAML ? yamlWriterMapper : jsonWriterMapper;
+        objectMapper.writeValue(writer, workflow);
+    }
+
+    public static Optional<String> getBaseURI(Workflow workflow) {
+        return Optional.ofNullable(getMetadata(workflow).get(BASE_URI));
+    }
+
+    public static Workflow withBaseURI(Workflow workflow, String baseURI) {
+        getMetadata(workflow).put(BASE_URI, baseURI);
+        return workflow;
+    }
+
+    public static Map<String, String> getMetadata(Workflow workflow) {
+        Map<String, String> metadata = workflow.getMetadata();
+        if (metadata == null) {
+            metadata = new HashMap<>();
+            workflow.setMetadata(metadata);
+        }
+        return metadata;
+    }
+
+    private static BaseObjectMapper deserializer(BaseObjectMapper objectMapper) {
+        ExtensionDeserializer deserializer = objectMapper.getWorkflowModule().getExtensionDeserializer();
+        deserializer.addExtension(URIDefinitions.URI_DEFINITIONS, URIDefinitions.class);
+        deserializer.addExtension(FunctionNamespaces.FUNCTION_NAMESPACES, FunctionNamespaces.class);
+        deserializer.addExtension(OutputSchema.OUTPUT_SCHEMA, OutputSchema.class);
+        return objectMapper;
+    }
+
+    private static BaseObjectMapper serializer(BaseObjectMapper objectMapper) {
+        ExtensionSerializer serializer = objectMapper.getWorkflowModule().getExtensionSerializer();
+        serializer.addExtension(URIDefinitions.URI_DEFINITIONS, URIDefinitions.class);
+        serializer.addExtension(FunctionNamespaces.FUNCTION_NAMESPACES, FunctionNamespaces.class);
+        serializer.addExtension(OutputSchema.OUTPUT_SCHEMA, OutputSchema.class);
+        return objectMapper;
+    }
+
+    public static String getFunctionPrefix(FunctionDefinition function) {
         return APP_PROPERTIES_FUNCTIONS_BASE + function.getName();
     }
 
-    public static Workflow getWorkflow(Reader workflowFile, String workflowFormat) throws IOException {
-        return getObjectMapper(workflowFormat).readValue(workflowFile, Workflow.class);
+    public static <T> Supplier<Expression> runtimeRestApi(FunctionDefinition function, String metadataKey, KogitoBuildContext context, Class<T> clazz, T defaultValue) {
+        return runtimeResolveMetadata(getFunctionPrefix(function), metadataKey, clazz, resolveFunctionMetadata(function, metadataKey, context, clazz, defaultValue),
+                ConfigWorkItemSupplier::new);
     }
 
-    private static String getOpenApiPrefix(String serviceName) {
-        return OPEN_API_PROPERTIES_BASE + serviceName;
+    public static Supplier<Expression> runtimeRestApi(FunctionDefinition function, String metadataKey, KogitoBuildContext context) {
+        return runtimeRestApi(function, metadataKey, context, String.class, null);
     }
 
-    private static String getPropKey(String prefix, String key) {
+    public static <T> Supplier<Expression> runtimeResolveMetadata(String prefix, String metadataKey, Class<T> clazz, T defaultValue,
+            ExpressionBuilder<T> builder) {
+        return builder.create(getPropKey(prefix, metadataKey), clazz, defaultValue);
+    }
+
+    public static String getPropKey(String prefix, String key) {
         return prefix + "." + key;
     }
 
@@ -89,79 +210,65 @@ public class ServerlessWorkflowUtils {
                 : context.getApplicationProperty(getPropKey(getFunctionPrefix(function), metadataKey), clazz).orElse(defaultValue);
     }
 
-    public static String getOpenApiProperty(String serviceName, String metadataKey, KogitoBuildContext context) {
-        return getOpenApiProperty(serviceName, metadataKey, context, String.class, "");
-    }
-
-    public static <T> T getOpenApiProperty(String serviceName, String metadataKey, KogitoBuildContext context, Class<T> clazz, T defaultValue) {
-        return context.getApplicationProperty(getPropKey(getOpenApiPrefix(serviceName), metadataKey), clazz).orElse(defaultValue);
-    }
-
-    public static Supplier<Expression> runtimeRestApi(FunctionDefinition function, String metadataKey, KogitoBuildContext context) {
-        return runtimeRestApi(function, metadataKey, context, String.class, null);
-    }
-
-    public static Supplier<Expression> runtimeOpenApi(String serviceName, String metadataKey, KogitoBuildContext context) {
-        return runtimeOpenApi(serviceName, metadataKey, context, String.class, null);
-    }
-
-    public static <T> Supplier<Expression> runtimeRestApi(FunctionDefinition function, String metadataKey, KogitoBuildContext context, Class<T> clazz, T defaultValue) {
-        return runtimeResolveMetadata(getFunctionPrefix(function), metadataKey, clazz, resolveFunctionMetadata(function, metadataKey, context, clazz, defaultValue),
-                ConfigWorkItemSupplier::new);
-    }
-
-    public static <T> Supplier<Expression> runtimeOpenApi(String serviceName, String metadataKey, KogitoBuildContext context, Class<T> clazz, T defaultValue) {
-        return runtimeOpenApi(serviceName, metadataKey, clazz, getOpenApiProperty(serviceName, metadataKey, context, clazz, defaultValue), ConfigWorkItemSupplier::new);
-    }
-
-    public static <T> Supplier<Expression> runtimeOpenApi(String serviceName, String metadataKey, Class<T> clazz, T defaultValue, ExpressionBuilder<T> builder) {
-        return runtimeResolveMetadata(getOpenApiPrefix(serviceName), metadataKey, clazz, defaultValue, builder);
-    }
-
-    private static <T> Supplier<Expression> runtimeResolveMetadata(String prefix, String metadataKey, Class<T> clazz, T defaultValue,
-            ExpressionBuilder<T> builder) {
-        return builder.create(getPropKey(prefix, metadataKey), clazz, defaultValue);
-    }
-
     public interface ExpressionBuilder<T> {
         Supplier<Expression> create(String key, Class<T> clazz, T defaultValue);
     }
 
-    /**
-     * Checks whether or not the Function definition is an OpenApi operation
-     *
-     * @param function to verify
-     * @return true if the given function refers to an OpenApi operation
-     */
-    public static boolean isOpenApiOperation(FunctionDefinition function) {
-        return function.getType() == Type.REST && function.getOperation() != null && function.getOperation().contains(OpenAPIOperationId.OPENAPI_OPERATION_SEPARATOR);
+    public static String removeExt(String fileName) {
+        return fileName.replaceFirst(REGEX_NO_EXT, "");
     }
 
-    public static String getForEachVarName(KogitoBuildContext context) {
-        return context.getApplicationProperty(APP_PROPERTIES_BASE + APP_PROPERTIES_STATES_BASE + "foreach.outputVarName").orElse("_swf_eval_temp");
+    public static String onlyChars(String name) {
+        return filterString(name, Character::isLetter, Optional.empty());
     }
 
-    public static Optional<byte[]> processResourceFile(Workflow workflow, ParserContext parserContext, String uriStr) {
-        return processResourceFile(workflow, parserContext, uriStr, null);
+    public static String replaceNonAlphanumeric(final String name) {
+        return filterString(name, Character::isLetterOrDigit, Optional.of(() -> '_'));
     }
 
-    public static Optional<byte[]> processResourceFile(Workflow workflow, ParserContext parserContext, String uriStr, String authRef) {
-        final URI uri = URI.create(uriStr);
-        final Optional<byte[]> bytes = loadResourceFile(workflow, parserContext, uriStr, authRef);
-        bytes.ifPresent(value -> parserContext.addGeneratedFile(new GeneratedFile(GeneratedFileType.INTERNAL_RESOURCE, uri.getPath(), value)));
-        return bytes;
+    public static <T extends Extension> Optional<T> getExtension(Workflow workflow, Class<T> extensionClass) {
+        return workflow.getExtensions().stream().filter(extensionClass::isInstance).findFirst().map(extensionClass::cast);
     }
 
-    public static Optional<byte[]> loadResourceFile(Workflow workflow, ParserContext parserContext, String uriStr, String authRef) {
-        final URI uri = URI.create(uriStr);
-        try {
-            final byte[] bytes = URIContentLoaderFactory.readAllBytes(URIContentLoaderFactory.buildLoader(uri, parserContext.getContext().getClassLoader(), workflow, authRef));
-            return Optional.of(bytes);
-        } catch (IOException io) {
-            // if file cannot be found in build context, warn it and return the unmodified uri (it might be possible that later the resource is available at runtime)
-            logger.warn("Resource {} cannot be found at build time, ignoring", uri, io);
+    public static String getValidIdentifier(String name) {
+        return filterString(name, Character::isJavaIdentifierPart, Optional.empty());
+    }
+
+    protected static String filterString(String str, Predicate<Character> p, Optional<Supplier<Character>> replacer) {
+        int length = str.length();
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            char c = str.charAt(i);
+            if (p.test(c)) {
+                sb.append(c);
+            } else {
+                replacer.ifPresent(r -> sb.append(r.get()));
+            }
         }
-        return Optional.empty();
+        return sb.toString();
     }
 
+    public static ModelMetaData getModelMetadata(WorkflowProcess process) {
+        return getModelMetadata(process, JsonNodeModel.class);
+    }
+
+    private static ModelMetaData getModelMetadata(WorkflowProcess process, Class<?> modelClass) {
+        return new ModelMetaData(process.getId(), modelClass.getPackage().getName(), modelClass.getSimpleName(), KogitoWorkflowProcess.PUBLIC_VISIBILITY,
+                VariableDeclarations.of(Collections.emptyMap()), false);
+    }
+
+    public static <T, V> Map<V, Integer> findDuplicates(List<T> items, Function<T, V> converter) {
+        if (items == null) {
+            return Map.of();
+        }
+        Map<V, Integer> duplicates = new LinkedHashMap<>();
+        Set<V> helper = new HashSet<>();
+        items.forEach(item -> {
+            V toAdd = converter.apply(item);
+            if (!helper.add(toAdd)) {
+                duplicates.compute(toAdd, (k, v) -> v == null ? 2 : ++v);
+            }
+        });
+        return duplicates;
+    }
 }

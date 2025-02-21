@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.process;
 
@@ -20,18 +23,24 @@ import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.drools.codegen.common.GeneratedFile;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.kie.kogito.codegen.api.AddonsConfig;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
+import org.kie.kogito.codegen.api.context.impl.JavaKogitoBuildContext;
+import org.kie.kogito.codegen.api.context.impl.QuarkusKogitoBuildContext;
+import org.kie.kogito.codegen.api.context.impl.SpringBootKogitoBuildContext;
 import org.kie.kogito.codegen.core.DashboardGeneratedFileUtils;
 import org.kie.kogito.codegen.core.io.CollectedResourceProducer;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.kie.kogito.codegen.process.ProcessCodegen.BUSINESS_CALENDAR_PRODUCER_TEMPLATE;
 import static org.kie.kogito.grafana.utils.GrafanaDashboardUtils.DISABLED_OPERATIONAL_DASHBOARDS;
 
 class ProcessCodegenTest {
@@ -50,7 +59,7 @@ class ProcessCodegenTest {
         assertThat(emptyCodeGenerator.isEnabled()).isFalse();
 
         Collection<GeneratedFile> emptyGeneratedFiles = emptyCodeGenerator.generate();
-        assertThat(emptyGeneratedFiles.size()).isEqualTo(0);
+        assertThat(emptyGeneratedFiles).isEmpty();
 
         ProcessCodegen codeGenerator = ProcessCodegen.ofCollectedResources(
                 context,
@@ -97,16 +106,44 @@ class ProcessCodegenTest {
         generateTestDashboards(codeGenerator, 0);
     }
 
+    @ParameterizedTest
+    @MethodSource("contextBuildersForBusinessCalendar")
+    public void whenCalendarPropertiesFoundGenerateBusinessCalendar(KogitoBuildContext.Builder contextBuilder, String dependencyAnnotation) {
+        KogitoBuildContext context = contextBuilder.build();
+        StaticDependencyInjectionProducerGenerator staticDependencyInjectionProducerGenerator = StaticDependencyInjectionProducerGenerator.of(context);
+        Map<String, String> businessCalendarProducerSourcesMap = staticDependencyInjectionProducerGenerator.generate(List.of(BUSINESS_CALENDAR_PRODUCER_TEMPLATE));
+        String expectedKey = "org/kie/kogito/app/BusinessCalendarProducer.java";
+        assertThat(businessCalendarProducerSourcesMap).hasSize(1).containsKey(expectedKey);
+        String generatedContent = businessCalendarProducerSourcesMap.get(expectedKey);
+        assertThat(generatedContent).isNotNull().isNotEmpty().contains(dependencyAnnotation);
+    }
+
+    @ParameterizedTest
+    @MethodSource("contextBuildersNotDI")
+    public void whenBuildingNotDIContext(KogitoBuildContext.Builder contextBuilder) {
+        KogitoBuildContext context = contextBuilder.build();
+        StaticDependencyInjectionProducerGenerator staticDependencyInjectionProducerGenerator = StaticDependencyInjectionProducerGenerator.of(context);
+        Map<String, String> businessCalendarProducer = staticDependencyInjectionProducerGenerator.generate(List.of(BUSINESS_CALENDAR_PRODUCER_TEMPLATE));
+        assertThat(businessCalendarProducer).isEmpty();
+    }
+
     private List<GeneratedFile> generateTestDashboards(ProcessCodegen codeGenerator, int expectedDashboards) {
-
         Collection<GeneratedFile> generatedFiles = codeGenerator.generate();
-
         List<GeneratedFile> dashboards = generatedFiles.stream()
                 .filter(x -> x.type().equals(DashboardGeneratedFileUtils.DASHBOARD_TYPE))
                 .collect(Collectors.toList());
-
-        assertEquals(expectedDashboards, dashboards.size());
-
+        assertThat(dashboards).hasSize(expectedDashboards);
         return dashboards;
+    }
+
+    private static Stream<Arguments> contextBuildersForBusinessCalendar() {
+        return Stream.of(
+                Arguments.of(QuarkusKogitoBuildContext.builder(), "@Produces"),
+                Arguments.of(SpringBootKogitoBuildContext.builder(), "@Bean"));
+    }
+
+    private static Stream<Arguments> contextBuildersNotDI() {
+        return Stream.of(
+                Arguments.of(JavaKogitoBuildContext.builder()));
     }
 }

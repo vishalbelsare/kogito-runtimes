@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.bpmn2.xml;
 
@@ -19,10 +22,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import org.drools.core.xml.ExtensibleXmlParser;
 import org.jbpm.bpmn2.core.Error;
 import org.jbpm.bpmn2.core.Escalation;
 import org.jbpm.bpmn2.core.Message;
+import org.jbpm.compiler.xml.Parser;
 import org.jbpm.compiler.xml.ProcessBuildData;
 import org.jbpm.process.instance.impl.actions.HandleMessageAction;
 import org.jbpm.process.instance.impl.actions.SignalProcessInstanceAction;
@@ -30,6 +33,7 @@ import org.jbpm.ruleflow.core.Metadata;
 import org.jbpm.workflow.core.DroolsAction;
 import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.impl.DroolsConsequenceAction;
+import org.jbpm.workflow.core.impl.ExtendedNodeImpl;
 import org.jbpm.workflow.core.impl.IOSpecification;
 import org.jbpm.workflow.core.impl.NodeImpl;
 import org.jbpm.workflow.core.node.EndNode;
@@ -61,7 +65,7 @@ public class EndEventHandler extends AbstractNodeHandler {
     }
 
     @Override
-    protected Node handleNode(Node newNode, Element element, String uri, String localName, ExtensibleXmlParser parser) throws SAXException {
+    protected Node handleNode(Node newNode, Element element, String uri, String localName, Parser parser) throws SAXException {
         NodeImpl node = (NodeImpl) newNode;
         // determine type of event definition, so the correct type of node
         // can be generated
@@ -85,10 +89,10 @@ public class EndEventHandler extends AbstractNodeHandler {
                 handleMessageNode(node, element, uri, localName, parser);
             } else if ("errorEventDefinition".equals(nodeName)) {
                 FaultNode faultNode = new FaultNode();
+                faultNode.setMetaData(node.getMetaData());
                 faultNode.setId(node.getId());
                 faultNode.setName(node.getName());
                 faultNode.setTerminateParent(true);
-                faultNode.setMetaData("UniqueId", node.getMetaData().get("UniqueId"));
                 node = faultNode;
                 setThrowVariable(ioSpecification, node);
                 faultNode.setFaultVariable((String) node.getMetaData().get(Metadata.VARIABLE));
@@ -97,9 +101,9 @@ public class EndEventHandler extends AbstractNodeHandler {
                 break;
             } else if ("escalationEventDefinition".equals(nodeName)) {
                 FaultNode faultNode = new FaultNode();
+                faultNode.setMetaData(node.getMetaData());
                 faultNode.setId(node.getId());
                 faultNode.setName(node.getName());
-                faultNode.setMetaData("UniqueId", node.getMetaData().get("UniqueId"));
                 node = faultNode;
                 setThrowVariable(ioSpecification, node);
                 faultNode.setFaultVariable((String) node.getMetaData().get(Metadata.VARIABLE));
@@ -121,7 +125,7 @@ public class EndEventHandler extends AbstractNodeHandler {
     }
 
     public void handleTerminateNode(final Node node, final Element element, final String uri,
-            final String localName, final ExtensibleXmlParser parser) throws SAXException {
+            final String localName, final Parser parser) throws SAXException {
         ((EndNode) node).setTerminate(true);
 
         EndNode endNode = (EndNode) node;
@@ -141,7 +145,7 @@ public class EndEventHandler extends AbstractNodeHandler {
     }
 
     public void handleSignalNode(final Node node, final Element element, final String uri,
-            final String localName, final ExtensibleXmlParser parser) throws SAXException {
+            final String localName, final Parser parser) throws SAXException {
         EndNode endNode = (EndNode) node;
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
@@ -164,9 +168,9 @@ public class EndEventHandler extends AbstractNodeHandler {
                 DroolsConsequenceAction action = createJavaAction(
                         new SignalProcessInstanceAction(signalName, variable, inputVariable, (String) endNode.getMetaData("customScope")));
 
-                List<DroolsAction> actions = new ArrayList<DroolsAction>();
+                List<DroolsAction> actions = new ArrayList<>();
                 actions.add(action);
-                endNode.setActions(EndNode.EVENT_NODE_ENTER, actions);
+                endNode.setActions(ExtendedNodeImpl.EVENT_NODE_ENTER, actions);
             }
             xmlNode = xmlNode.getNextSibling();
         }
@@ -174,7 +178,7 @@ public class EndEventHandler extends AbstractNodeHandler {
 
     @SuppressWarnings("unchecked")
     public void handleMessageNode(final Node node, final Element element, final String uri,
-            final String localName, final ExtensibleXmlParser parser) throws SAXException {
+            final String localName, final Parser parser) throws SAXException {
         EndNode endNode = (EndNode) node;
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
@@ -199,7 +203,7 @@ public class EndEventHandler extends AbstractNodeHandler {
                 DroolsConsequenceAction action = createJavaAction(new HandleMessageAction(message.getType(), variable));
 
                 actions.add(action);
-                endNode.setActions(EndNode.EVENT_NODE_ENTER, actions);
+                endNode.setActions(ExtendedNodeImpl.EVENT_NODE_ENTER, actions);
             }
             xmlNode = xmlNode.getNextSibling();
         }
@@ -207,7 +211,7 @@ public class EndEventHandler extends AbstractNodeHandler {
 
     @SuppressWarnings("unchecked")
     public void handleErrorNode(final Node node, final Element element, final String uri,
-            final String localName, final ExtensibleXmlParser parser) throws SAXException {
+            final String localName, final Parser parser) throws SAXException {
         FaultNode faultNode = (FaultNode) node;
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
@@ -239,7 +243,7 @@ public class EndEventHandler extends AbstractNodeHandler {
 
     @SuppressWarnings("unchecked")
     public void handleEscalationNode(final Node node, final Element element, final String uri,
-            final String localName, final ExtensibleXmlParser parser) throws SAXException {
+            final String localName, final Parser parser) throws SAXException {
         FaultNode faultNode = (FaultNode) node;
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
@@ -256,6 +260,7 @@ public class EndEventHandler extends AbstractNodeHandler {
                         throw new ProcessParsingValidationException("Could not find escalation " + escalationRef);
                     }
                     faultNode.setFaultName(escalation.getEscalationCode());
+                    faultNode.setMetaData("FaultCode", escalation.getEscalationCode());
                 } else {
                     // BPMN2 spec, p. 83: end event's with <escalationEventDefintions>
                     // are _required_ to reference a specific escalation(-code).

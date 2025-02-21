@@ -1,17 +1,20 @@
 /*
- * Copyright 2020 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.prediction.api;
 
@@ -21,12 +24,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.drools.util.io.ClassPathResource;
-import org.jbpm.process.instance.impl.humantask.HumanTaskWorkItemHandler;
+import org.drools.io.ClassPathResource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.kie.kogito.Model;
 import org.kie.kogito.auth.SecurityPolicy;
+import org.kie.kogito.internal.process.workitem.Policy;
 import org.kie.kogito.process.ProcessConfig;
 import org.kie.kogito.process.ProcessInstance;
 import org.kie.kogito.process.WorkItem;
@@ -35,20 +38,18 @@ import org.kie.kogito.process.bpmn2.BpmnVariables;
 import org.kie.kogito.process.impl.CachedWorkItemHandlerConfig;
 import org.kie.kogito.process.impl.DefaultProcessEventListenerConfig;
 import org.kie.kogito.process.impl.StaticProcessConfig;
-import org.kie.kogito.process.workitem.Policy;
 import org.kie.kogito.process.workitems.InternalKogitoWorkItem;
 import org.kie.kogito.services.identity.StaticIdentityProvider;
 import org.kie.kogito.services.uow.CollectingUnitOfWorkFactory;
 import org.kie.kogito.services.uow.DefaultUnitOfWorkManager;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.kie.kogito.internal.process.runtime.KogitoProcessInstance.STATE_ACTIVE;
 import static org.kie.kogito.internal.process.runtime.KogitoProcessInstance.STATE_COMPLETED;
 
 public class PredictionAwareHumanTaskLifeCycleTest {
 
-    private Policy<?> securityPolicy = SecurityPolicy.of(new StaticIdentityProvider("john"));
+    private Policy securityPolicy = SecurityPolicy.of(new StaticIdentityProvider("john"));
 
     private AtomicBoolean predictNow;
     private List<String> trainedTasks;
@@ -86,8 +87,8 @@ public class PredictionAwareHumanTaskLifeCycleTest {
         };
 
         CachedWorkItemHandlerConfig wiConfig = new CachedWorkItemHandlerConfig();
-        wiConfig.register("Human Task", new HumanTaskWorkItemHandler(new PredictionAwareHumanTaskLifeCycle(predictionService)));
-        config = new StaticProcessConfig(wiConfig, new DefaultProcessEventListenerConfig(), new DefaultUnitOfWorkManager(new CollectingUnitOfWorkFactory()), null);
+        wiConfig.register("Human Task", new PredictionAwareHumanTaskWorkItemHandler(predictionService));
+        config = new StaticProcessConfig(wiConfig, new DefaultProcessEventListenerConfig(), new DefaultUnitOfWorkManager(new CollectingUnitOfWorkFactory()));
     }
 
     @Test
@@ -100,14 +101,13 @@ public class PredictionAwareHumanTaskLifeCycleTest {
         ProcessInstance<BpmnVariables> processInstance = process.createInstance(BpmnVariables.create(Collections.singletonMap("test", "test")));
 
         processInstance.start();
-        assertEquals(STATE_COMPLETED, processInstance.status());
+        assertThat(processInstance.status()).isEqualTo(STATE_COMPLETED);
 
         Model result = (Model) processInstance.variables();
-        assertEquals(2, result.toMap().size());
-        assertEquals("predicted value", result.toMap().get("s"));
+        assertThat(result.toMap()).hasSize(2)
+                .containsEntry("s", "predicted value");
 
-        assertEquals(0, trainedTasks.size());
-
+        assertThat(trainedTasks).isEmpty();
     }
 
     @Test
@@ -119,19 +119,18 @@ public class PredictionAwareHumanTaskLifeCycleTest {
         ProcessInstance<BpmnVariables> processInstance = process.createInstance(BpmnVariables.create(Collections.singletonMap("test", "test")));
 
         processInstance.start();
-        assertEquals(STATE_ACTIVE, processInstance.status());
+        assertThat(processInstance.status()).isEqualTo(STATE_ACTIVE);
 
         WorkItem workItem = processInstance.workItems(securityPolicy).get(0);
-        assertNotNull(workItem);
-        assertEquals("john", workItem.getParameters().get("ActorId"));
+        assertThat(workItem).isNotNull();
+        assertThat(workItem.getParameters()).containsEntry("ActorId", "john");
         processInstance.completeWorkItem(workItem.getId(), Collections.singletonMap("output", "given value"), securityPolicy);
-        assertEquals(STATE_COMPLETED, processInstance.status());
+        assertThat(processInstance.status()).isEqualTo(STATE_COMPLETED);
 
         Model result = (Model) processInstance.variables();
-        assertEquals(2, result.toMap().size());
-        assertEquals("given value", result.toMap().get("s"));
+        assertThat(result.toMap()).hasSize(2)
+                .containsEntry("s", "given value");
 
-        assertEquals(1, trainedTasks.size());
-
+        assertThat(trainedTasks).hasSize(1);
     }
 }

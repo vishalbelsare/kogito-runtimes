@@ -1,17 +1,20 @@
 /*
- * Copyright 2020 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kogito.workitem.rest;
 
@@ -31,7 +34,8 @@ import org.jbpm.workflow.instance.node.WorkItemNodeInstance;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.kie.kogito.internal.process.runtime.KogitoWorkItemManager;
+import org.kie.kogito.internal.process.workitem.KogitoWorkItemManager;
+import org.kie.kogito.internal.process.workitem.WorkItemTransition;
 import org.kie.kogito.jackson.utils.ObjectMapperFactory;
 import org.kie.kogito.process.workitems.impl.KogitoWorkItemImpl;
 import org.kogito.workitem.rest.bodybuilders.DefaultWorkItemHandlerBodyBuilder;
@@ -54,9 +58,6 @@ import io.vertx.mutiny.ext.web.client.HttpResponse;
 import io.vertx.mutiny.ext.web.client.WebClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.kogito.workitem.rest.RestWorkItemHandler.BODY_BUILDER;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -97,9 +98,6 @@ public class RestWorkItemHandlerTest {
     private WorkItemNode node;
 
     @Captor
-    private ArgumentCaptor<Map<String, Object>> argCaptor;
-
-    @Captor
     private ArgumentCaptor<Map<String, Object>> bodyCaptor;
 
     private ObjectNode workflowData;
@@ -109,6 +107,7 @@ public class RestWorkItemHandlerTest {
     @BeforeEach
     public void init() {
         WebClient webClient = mock(WebClient.class);
+        WebClient sslClient = mock(WebClient.class);
         ObjectMapper mapper = new ObjectMapper();
         when(webClient.request(any(HttpMethod.class), eq(8080), eq("localhost"), anyString()))
                 .thenReturn(request);
@@ -116,6 +115,7 @@ public class RestWorkItemHandlerTest {
         when(request.sendJsonAndAwait(any())).thenReturn(response);
         when(request.sendAndAwait()).thenReturn(response);
         when(response.bodyAsJson(ObjectNode.class)).thenReturn(ObjectMapperFactory.get().createObjectNode().put("num", 1));
+        when(response.statusCode()).thenReturn(200);
 
         workItem = new KogitoWorkItemImpl();
         workItem.setId("2");
@@ -145,10 +145,12 @@ public class RestWorkItemHandlerTest {
         when(node.getIoSpecification()).thenReturn(ioSpecification);
         workItem.setNodeInstance(nodeInstance);
         when(nodeInstance.getNode()).thenReturn(node);
+        when(node.resolveContext(VariableScope.VARIABLE_SCOPE, DEFAULT_WORKFLOW_VAR)).thenReturn(variableScope);
+
         Map<String, String> outputMapping = Collections.singletonMap(RestWorkItemHandler.RESULT, DEFAULT_WORKFLOW_VAR);
         when(ioSpecification.getOutputMappingBySources()).thenReturn(outputMapping);
 
-        handler = new RestWorkItemHandler(webClient);
+        handler = new RestWorkItemHandler(webClient, sslClient);
     }
 
     @Test
@@ -158,20 +160,21 @@ public class RestWorkItemHandlerTest {
         RestWorkItemHandlerResult resultHandler = new DefaultRestWorkItemHandlerResult();
         HttpResponse<Buffer> response = mock(HttpResponse.class);
         when(response.bodyAsJson(ObjectNode.class)).thenReturn(objectNode);
-        assertSame(objectNode, resultHandler.apply(response, ObjectNode.class));
+        assertThat(resultHandler.apply(response, ObjectNode.class)).isSameAs(objectNode);
     }
 
     @Test
     public void testGetRestTaskHandler() {
         parameters.put("id", 26);
-        parameters.put("name", "pepe");
-        parameters.put(RestWorkItemHandler.URL, "http://localhost:8080/results/{id}/names/{name}");
+        parameters.put("name", "kogito is whitespace friendly");
+        parameters.put(RestWorkItemHandler.URL, "http://localhost:8080/results/{id}?name={name}");
         parameters.put(RestWorkItemHandler.METHOD, "GET");
         parameters.put(RestWorkItemHandler.CONTENT_DATA, workflowData);
 
-        handler.executeWorkItem(workItem, manager);
+        WorkItemTransition transition = handler.startingTransition(parameters);
+        workItem.setPhaseStatus("Activated");
 
-        assertResult(manager, argCaptor);
+        assertResult(handler.activateWorkItemHandler(manager, handler, workItem, transition));
     }
 
     @Test
@@ -182,11 +185,10 @@ public class RestWorkItemHandlerTest {
 
         when(ioSpecification.getOutputMappingBySources()).thenReturn(Collections.singletonMap(RestWorkItemHandler.RESULT, DEFAULT_WORKFLOW_VAR));
 
-        handler.executeWorkItem(workItem, manager);
+        Optional<WorkItemTransition> transition = handler.transitionToPhase(manager, workItem, handler.startingTransition(parameters));
 
-        verify(manager).completeWorkItem(anyString(), argCaptor.capture());
-        Map<String, Object> results = argCaptor.getValue();
-        assertEquals(1, results.size());
+        assertThat(transition).isPresent();
+        assertThat(transition.get().data()).hasSize(1);
     }
 
     @Test
@@ -196,14 +198,13 @@ public class RestWorkItemHandlerTest {
         parameters.put(RestWorkItemHandler.METHOD, "POST");
         parameters.put(BODY_BUILDER, new DefaultWorkItemHandlerBodyBuilder());
 
-        handler.executeWorkItem(workItem, manager);
+        assertResult(handler.transitionToPhase(manager, workItem, handler.startingTransition(parameters)));
 
         verify(request).sendJsonAndAwait(bodyCaptor.capture());
         Map<String, Object> bodyMap = bodyCaptor.getValue();
-        assertEquals(26, bodyMap.get("id"));
-        assertEquals("pepe", bodyMap.get("name"));
+        assertThat(bodyMap).containsEntry("id", 26)
+                .containsEntry("name", "pepe");
 
-        assertResult(manager, argCaptor);
     }
 
     @Test
@@ -212,15 +213,14 @@ public class RestWorkItemHandlerTest {
         parameters.put(BODY_BUILDER, new DefaultWorkItemHandlerBodyBuilder());
         parameters.put(RestWorkItemHandler.CONTENT_DATA, workflowData);
 
-        handler.executeWorkItem(workItem, manager);
+        assertResult(handler.transitionToPhase(manager, workItem, handler.startingTransition(parameters)));
 
         ArgumentCaptor<ObjectNode> bodyCaptor = ArgumentCaptor.forClass(ObjectNode.class);
         verify(request).sendJsonAndAwait(bodyCaptor.capture());
         ObjectNode bodyMap = bodyCaptor.getValue();
-        assertEquals(26, bodyMap.get("id").asInt());
-        assertEquals("pepe", bodyMap.get("name").asText());
+        assertThat(bodyMap.get("id").asInt()).isEqualTo(26);
+        assertThat(bodyMap.get("name").asText()).isEqualTo("pepe");
 
-        assertResult(manager, argCaptor);
     }
 
     @Test
@@ -246,17 +246,16 @@ public class RestWorkItemHandlerTest {
         parameters.put(customParameter, workflowData);
         Optional.ofNullable(bodyBuilderClass).ifPresent(builder -> parameters.put(BODY_BUILDER, builder));
 
-        handler.executeWorkItem(workItem, manager);
+        assertResult(handler.transitionToPhase(manager, workItem, handler.startingTransition(parameters)));
 
         verify(request).sendJsonAndAwait(bodyCaptor.capture());
 
         Map<String, Object> bodyMap = bodyCaptor.getValue();
-        assertThat(bodyMap.get("id")).isEqualTo(123);
-        assertThat(bodyMap.get("name")).isEqualTo("tiago");
-        //assert the evaluated expression with a process variable
-        assertThat(bodyMap.get(customParameter)).isEqualTo(workflowData);
+        assertThat(bodyMap).containsEntry("id", 123)
+                .containsEntry("name", "tiago")
+                //assert the evaluated expression with a process variable
+                .containsEntry(customParameter, workflowData);
 
-        assertResult(manager, argCaptor);
     }
 
     @Test
@@ -264,24 +263,21 @@ public class RestWorkItemHandlerTest {
         parameters.put(RestWorkItemHandler.METHOD, "POST");
         parameters.put(RestWorkItemHandler.CONTENT_DATA, workflowData);
 
-        handler.executeWorkItem(workItem, manager);
+        assertResult(handler.transitionToPhase(manager, workItem, handler.startingTransition(parameters)));
 
         ArgumentCaptor<ObjectNode> bodyCaptor = ArgumentCaptor.forClass(ObjectNode.class);
         verify(request).sendJsonAndAwait(bodyCaptor.capture());
         ObjectNode bodyMap = bodyCaptor.getValue();
-        assertEquals(26, bodyMap.get("id").asInt());
-        assertEquals("pepe", bodyMap.get("name").asText());
+        assertThat(bodyMap.get("id").asInt()).isEqualTo(26);
+        assertThat(bodyMap.get("name").asText()).isEqualTo("pepe");
 
-        assertResult(manager, argCaptor);
     }
 
-    public void assertResult(KogitoWorkItemManager manager, ArgumentCaptor<Map<String, Object>> argCaptor) {
-        verify(manager).completeWorkItem(anyString(), argCaptor.capture());
-        Map<String, Object> results = argCaptor.getValue();
-        assertEquals(1, results.size());
-        assertTrue(results.containsKey(RestWorkItemHandler.RESULT));
+    public void assertResult(Optional<WorkItemTransition> transition) {
+        Map<String, Object> results = transition.get().data();
+        assertThat(results).hasSize(1).containsKey(RestWorkItemHandler.RESULT);
         Object result = results.get(RestWorkItemHandler.RESULT);
-        assertTrue(result instanceof ObjectNode);
-        assertEquals(1, ((ObjectNode) result).get("num").asInt());
+        assertThat(result).isInstanceOf(ObjectNode.class);
+        assertThat(((ObjectNode) result).get("num").asInt()).isOne();
     }
 }

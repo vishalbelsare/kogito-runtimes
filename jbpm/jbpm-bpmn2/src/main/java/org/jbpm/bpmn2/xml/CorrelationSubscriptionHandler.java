@@ -1,29 +1,31 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.jbpm.bpmn2.xml;
 
 import java.util.HashMap;
 import java.util.Map;
 
-import org.drools.core.xml.BaseAbstractHandler;
-import org.drools.core.xml.ExtensibleXmlParser;
-import org.drools.core.xml.Handler;
 import org.jbpm.bpmn2.core.CorrelationSubscription;
 import org.jbpm.bpmn2.core.Expression;
+import org.jbpm.compiler.xml.Handler;
+import org.jbpm.compiler.xml.Parser;
+import org.jbpm.compiler.xml.core.BaseAbstractHandler;
 import org.jbpm.ruleflow.core.RuleFlowProcess;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -34,7 +36,7 @@ import org.xml.sax.SAXException;
 public class CorrelationSubscriptionHandler extends BaseAbstractHandler implements Handler {
 
     @Override
-    public Object start(String uri, String localName, Attributes attrs, ExtensibleXmlParser parser) throws SAXException {
+    public Object start(String uri, String localName, Attributes attrs, Parser parser) throws SAXException {
         parser.startElementBuilder(localName, attrs);
 
         String correlationSubscriptionPropertyId = attrs.getValue("id");
@@ -52,14 +54,14 @@ public class CorrelationSubscriptionHandler extends BaseAbstractHandler implemen
     }
 
     @Override
-    public Object end(String uri, String localName, ExtensibleXmlParser parser) throws SAXException {
+    public Object end(String uri, String localName, Parser parser) throws SAXException {
         Element element = parser.endElementBuilder();
         CorrelationSubscription correlationSubscription = (CorrelationSubscription) parser.getCurrent();
         correlationSubscription.getPropertyExpressions().putAll(buildPropertyProcessBindings(element.getChildNodes(), parser));
         return null;
     }
 
-    private Map<String, Expression> buildPropertyProcessBindings(NodeList childNodes, ExtensibleXmlParser parser) {
+    private Map<String, Expression> buildPropertyProcessBindings(NodeList childNodes, Parser parser) {
         Map<String, Expression> correlationKeys = new HashMap<>();
         for (int i = 0; i < childNodes.getLength(); i++) {
             Node node = childNodes.item(i);
@@ -71,7 +73,7 @@ public class CorrelationSubscriptionHandler extends BaseAbstractHandler implemen
         return correlationKeys;
     }
 
-    private Expression buildBindingExpression(NodeList childNodes, ExtensibleXmlParser parser) {
+    private Expression buildBindingExpression(NodeList childNodes, Parser parser) {
         for (int i = 0; i < childNodes.getLength(); i++) {
             Node node = childNodes.item(i);
             if ("dataPath".equals(node.getNodeName())) {

@@ -1,19 +1,21 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-
 package org.kie.kogito.jobs.api.event.serialization;
 
 import java.net.URI;
@@ -26,11 +28,11 @@ class SerializationTestConstants {
     static final ZonedDateTime TIME = ZonedDateTime.parse("2021-11-24T18:01:15.001+01:00");
     static final String SUBJECT = "SUBJECT";
     static final String JOB_ID = "JOB_ID";
-    static final String PROCESS_INSTANCE_ID = "PROCESS_INSTANCE_ID";
-    static final String PROCESS_ID = "PROCESS_ID";
-    static final String ROOT_PROCESS_INSTANCE_ID = "ROOT_PROCESS_INSTANCE_ID";
-    static final String ROOT_PROCESS_ID = "ROOT_PROCESS_ID";
-    static final String KOGITO_ADDONS = "KOGITO_ADDONS";
+    static final String PROCESS_INSTANCE_ID_VALUE = "PROCESS_INSTANCE_ID";
+    static final String PROCESS_ID_VALUE = "PROCESS_ID";
+    static final String ROOT_PROCESS_INSTANCE_ID_VALUE = "ROOT_PROCESS_INSTANCE_ID";
+    static final String ROOT_PROCESS_ID_VALUE = "ROOT_PROCESS_ID";
+    static final String KOGITO_ADDONS_VALUE = "KOGITO_ADDONS";
     static final String NODE_INSTANCE_ID = "NODE_INSTANCE_ID";
     static final long REPEAT_INTERVAL = 6000;
     static final int REPEAT_LIMIT = 3;

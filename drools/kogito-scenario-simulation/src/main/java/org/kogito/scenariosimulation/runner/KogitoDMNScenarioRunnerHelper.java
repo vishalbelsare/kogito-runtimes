@@ -1,17 +1,20 @@
 /*
- * Copyright 2020 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kogito.scenariosimulation.runner;
 
@@ -23,9 +26,10 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Stream;
 
+import org.drools.codegen.common.AppPaths;
+import org.drools.io.FileSystemResource;
 import org.drools.scenariosimulation.api.model.ScenarioSimulationModel;
 import org.drools.scenariosimulation.api.model.ScesimModelDescriptor;
 import org.drools.scenariosimulation.api.model.Settings;
@@ -34,18 +38,13 @@ import org.drools.scenariosimulation.backend.runner.DMNScenarioRunnerHelper;
 import org.drools.scenariosimulation.backend.runner.ScenarioException;
 import org.drools.scenariosimulation.backend.runner.model.ScenarioRunnerData;
 import org.drools.scenariosimulation.backend.util.DMNSimulationUtils;
-import org.drools.util.io.FileSystemResource;
-import org.kie.api.KieBase;
 import org.kie.api.io.Resource;
 import org.kie.api.runtime.KieContainer;
-import org.kie.api.runtime.KieRuntimeFactory;
 import org.kie.dmn.api.core.DMNContext;
 import org.kie.dmn.api.core.DMNModel;
 import org.kie.dmn.api.core.DMNResult;
 import org.kie.dmn.api.core.DMNRuntime;
 import org.kie.dmn.core.internal.utils.DMNRuntimeBuilder;
-import org.kie.kogito.pmml.PMMLKogito;
-import org.kie.pmml.evaluator.core.utils.KnowledgeBaseUtils;
 
 import static java.util.stream.Collectors.toList;
 import static org.drools.scenariosimulation.backend.fluent.DMNScenarioExecutableBuilder.DMN_MODEL;
@@ -54,6 +53,9 @@ import static org.drools.scenariosimulation.backend.fluent.DMNScenarioExecutable
 public class KogitoDMNScenarioRunnerHelper extends DMNScenarioRunnerHelper {
 
     private DMNRuntime dmnRuntime = initDmnRuntime();
+
+    private static final String targetFolder = File.separator + AppPaths.TARGET_DIR + File.separator;
+    private static final String generatedResourcesFolder = targetFolder + "generated-resources" + File.separator;
 
     @Override
     protected Map<String, Object> executeScenario(KieContainer kieContainer,
@@ -87,29 +89,7 @@ public class KogitoDMNScenarioRunnerHelper extends DMNScenarioRunnerHelper {
         }
     }
 
-    private Function<String, KieRuntimeFactory> initPmmlKieRuntimeFactory() {
-        try (Stream<Path> fileStream = Files.walk(Paths.get("."))) {
-            Map<KieBase, KieRuntimeFactory> kieRuntimeFactories =
-                    PMMLKogito.createKieRuntimeFactoriesWithInMemoryCompilation(
-                            fileStream
-                                    .filter(path -> filterResource(path, ".pmml"))
-                                    .map(Path::toString)
-                                    .toArray(String[]::new));
-
-            return s -> kieRuntimeFactories.keySet().stream()
-                    .filter(kieBase -> KnowledgeBaseUtils.getModel(kieBase, s).isPresent())
-                    .map(kieRuntimeFactories::get)
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("Failed to fine KieRuntimeFactory for model " + s));
-
-        } catch (IOException e) {
-            throw new IllegalStateException("Error initializing KogitoDMNScenarioRunnerHelper", e);
-        }
-    }
-
     private DMNRuntime initDmnRuntime() {
-        Function<String, KieRuntimeFactory> kieRuntimeFactoryFunction = initPmmlKieRuntimeFactory();
-
         try (Stream<Path> fileStream = Files.walk(Paths.get("."))) {
             List<Resource> resources = fileStream.filter(path -> filterResource(path, ".dmn"))
                     .map(Path::toFile)
@@ -117,7 +97,6 @@ public class KogitoDMNScenarioRunnerHelper extends DMNScenarioRunnerHelper {
                     .collect(toList());
 
             return DMNRuntimeBuilder.fromDefaults()
-                    .setKieRuntimeFactoryFunction(kieRuntimeFactoryFunction)
                     .buildConfiguration()
                     .fromResources(resources)
                     .getOrElseThrow(e -> new RuntimeException("Error initializing DMNRuntime", e));
@@ -127,8 +106,9 @@ public class KogitoDMNScenarioRunnerHelper extends DMNScenarioRunnerHelper {
     }
 
     private boolean filterResource(Path path, String extension) {
-        String targetFolder = File.separator + "target" + File.separator;
-        return path.toString().endsWith(extension) && !path.toString().contains(targetFolder) && Files.isRegularFile(path);
+        return path.toString().endsWith(extension) &&
+                (path.toString().contains(generatedResourcesFolder) || !(path.toString().contains(targetFolder)))
+                && Files.isRegularFile(path);
     }
 
 }

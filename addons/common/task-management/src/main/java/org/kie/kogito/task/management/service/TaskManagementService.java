@@ -1,72 +1,80 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.task.management.service;
 
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-import org.jbpm.process.instance.impl.humantask.HumanTaskHelper;
-import org.jbpm.process.instance.impl.humantask.HumanTaskWorkItemImpl;
-import org.kie.kogito.internal.process.runtime.KogitoWorkItem;
-import org.kie.kogito.process.Process;
 import org.kie.kogito.process.ProcessConfig;
-import org.kie.kogito.process.ProcessInstance;
-import org.kie.kogito.process.ProcessInstanceNotFoundException;
-import org.kie.kogito.process.Processes;
-import org.kie.kogito.process.workitem.HumanTaskWorkItem;
-import org.kie.kogito.process.workitem.Policy;
 import org.kie.kogito.services.uow.UnitOfWorkExecutor;
+import org.kie.kogito.usertask.UserTaskConfig;
+import org.kie.kogito.usertask.UserTaskInstance;
+import org.kie.kogito.usertask.UserTaskInstanceNotFoundException;
+import org.kie.kogito.usertask.UserTasks;
+import org.kie.kogito.usertask.impl.DefaultUserTaskInstance;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class TaskManagementService implements TaskManagementOperations {
 
-    private Processes processes;
-    private ProcessConfig processConfig;
+    private static final Logger LOG = LoggerFactory.getLogger(TaskManagementService.class);
 
-    public TaskManagementService(Processes processes, ProcessConfig processConfig) {
-        this.processes = processes;
-        this.processConfig = processConfig;
+    private UserTasks userTasks;
+    // unit of work needs to add the publisher and this is not shared.
+    private UserTaskConfig userTaskConfig;
+    private ProcessConfig processesConfig;
+
+    public TaskManagementService(UserTasks userTasks, UserTaskConfig userTaskConfig, ProcessConfig processConfig) {
+        this.userTasks = userTasks;
+        this.userTaskConfig = userTaskConfig;
+        this.processesConfig = processConfig;
     }
 
     @Override
-    public TaskInfo updateTask(String processId,
-            String processInstanceId,
-            String taskId,
-            TaskInfo taskInfo,
-            boolean shouldReplace,
-            Policy<?>... policies) {
-        ProcessInstance<?> pi = getProcessInstance(processId, processInstanceId, taskId);
-        KogitoWorkItem workItem = UnitOfWorkExecutor.executeInUnitOfWork(processConfig.unitOfWorkManager(),
-                () -> pi.updateWorkItem(taskId,
-                        wi -> {
-                            HumanTaskWorkItemImpl humanTask = HumanTaskHelper.asHumanTask(wi);
-                            setField(humanTask::setAdminGroups, taskInfo::getAdminGroups, shouldReplace);
-                            setField(humanTask::setAdminUsers, taskInfo::getAdminUsers, shouldReplace);
-                            setField(humanTask::setExcludedUsers, taskInfo::getExcludedUsers, shouldReplace);
-                            setField(humanTask::setPotentialUsers, taskInfo::getPotentialUsers, shouldReplace);
-                            setField(humanTask::setPotentialGroups, taskInfo::getPotentialGroups, shouldReplace);
-                            setField(humanTask::setTaskPriority, taskInfo::getPriority, shouldReplace);
-                            setField(humanTask::setTaskDescription, taskInfo::getDescription, shouldReplace);
-                            setMap(humanTask::setParameters, humanTask::setParameter, taskInfo.getInputParams(),
-                                    shouldReplace);
-                            return wi;
-                        }, policies));
-        return convert((HumanTaskWorkItem) workItem);
+    public TaskInfo updateTask(String taskId, TaskInfo taskInfo, boolean shouldReplace) {
+        UserTaskInstance userTaskInstance = UnitOfWorkExecutor.executeInUnitOfWork(processesConfig.unitOfWorkManager(), () -> {
+            DefaultUserTaskInstance ut = (DefaultUserTaskInstance) getUserTaskInstance(taskId);
+            setField(ut::setTaskDescription, taskInfo::getDescription, shouldReplace);
+            setField(ut::setTaskPriority, taskInfo::getPriority, shouldReplace);
+            setField(ut::setAdminGroups, taskInfo::getAdminGroups, shouldReplace);
+            setField(ut::setAdminUsers, taskInfo::getAdminUsers, shouldReplace);
+            setField(ut::setExcludedUsers, taskInfo::getExcludedUsers, shouldReplace);
+            setField(ut::setPotentialUsers, taskInfo::getPotentialUsers, shouldReplace);
+            setField(ut::setPotentialGroups, taskInfo::getPotentialGroups, shouldReplace);
+            setMap(ut::setInputs, ut::setInput, taskInfo.getInputParams(), shouldReplace);
+            return ut;
+        });
+        LOG.trace("updated task through management endpoint to {}", userTaskInstance);
+        return convert(userTaskInstance);
+    }
+
+    private <T> boolean setField(Consumer<T> consumer, Supplier<T> supplier, boolean shouldReplace) {
+        T value = supplier.get();
+        boolean result = shouldReplace || value != null;
+        if (result) {
+            consumer.accept(value);
+        }
+        return result;
     }
 
     private void setMap(Consumer<Map<String, Object>> allConsumer,
@@ -84,42 +92,32 @@ public class TaskManagementService implements TaskManagementOperations {
         }
     }
 
-    private <T> boolean setField(Consumer<T> consumer, Supplier<T> supplier, boolean shouldReplace) {
-        T value = supplier.get();
-        boolean result = shouldReplace || value != null;
-        if (result) {
-            consumer.accept(value);
-        }
-        return result;
-    }
-
     @Override
-    public TaskInfo getTask(String processId, String processInstanceId, String taskId, Policy<?>... policies) {
-        return convert(HumanTaskHelper.findTask(getProcessInstance(processId, processInstanceId, taskId), taskId,
-                policies));
+    public TaskInfo getTask(String taskId) {
+        return convert(getUserTaskInstance(taskId));
     }
 
-    private TaskInfo convert(HumanTaskWorkItem humanTask) {
-        return new TaskInfo(humanTask.getTaskDescription(), humanTask.getTaskPriority(), humanTask.getPotentialUsers(),
-                humanTask.getPotentialGroups(), humanTask.getExcludedUsers(), humanTask.getAdminUsers(),
-                humanTask.getAdminGroups(), humanTask.getParameters());
+    private TaskInfo convert(UserTaskInstance userTaskInstance) {
+        return new TaskInfo(
+                userTaskInstance.getTaskDescription(),
+                userTaskInstance.getTaskPriority(),
+                userTaskInstance.getPotentialUsers(),
+                userTaskInstance.getPotentialGroups(),
+                userTaskInstance.getExcludedUsers(),
+                userTaskInstance.getAdminUsers(),
+                userTaskInstance.getAdminGroups(),
+                userTaskInstance.getInputs());
     }
 
-    private ProcessInstance<?> getProcessInstance(String processId, String processInstanceId, String taskId) {
-        if (processId == null) {
-            throw new IllegalArgumentException("Process id must be given");
-        }
-        if (processInstanceId == null) {
-            throw new IllegalArgumentException("Process instance id must be given");
-        }
+    private UserTaskInstance getUserTaskInstance(String taskId) {
         if (taskId == null) {
             throw new IllegalArgumentException("Task id must be given");
         }
-        Process<?> process = processes.processById(processId);
-        if (process == null) {
-            throw new IllegalArgumentException(String.format("Process with id %s not found", processId));
+        Optional<UserTaskInstance> userTaskInstance = userTasks.instances().findById(taskId);
+        if (userTaskInstance.isEmpty()) {
+            throw new UserTaskInstanceNotFoundException(String.format("user task instance with id %s not found", taskId));
         }
-        return process.instances().findById(processInstanceId).orElseThrow(
-                () -> new ProcessInstanceNotFoundException(processInstanceId));
+        return userTaskInstance.get();
     }
+
 }
