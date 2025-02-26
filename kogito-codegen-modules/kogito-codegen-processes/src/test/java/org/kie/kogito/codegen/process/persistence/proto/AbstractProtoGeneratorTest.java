@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.process.persistence.proto;
 
@@ -30,7 +33,10 @@ import org.kie.kogito.codegen.data.AnswerBroken;
 import org.kie.kogito.codegen.data.AnswerBrokenV2;
 import org.kie.kogito.codegen.data.AnswerWithAnnotations;
 import org.kie.kogito.codegen.data.GeneratedPOJO;
+import org.kie.kogito.codegen.data.Hello;
+import org.kie.kogito.codegen.data.HelloModel;
 import org.kie.kogito.codegen.data.JacksonData;
+import org.kie.kogito.codegen.data.ListWithoutType;
 import org.kie.kogito.codegen.data.Person;
 import org.kie.kogito.codegen.data.PersonSubClass;
 import org.kie.kogito.codegen.data.PersonVarInfo;
@@ -89,7 +95,7 @@ public abstract class AbstractProtoGeneratorTest<T> {
         Proto proto = generator.protoOfDataClasses("org.kie.kogito.test");
         assertThat(proto).isNotNull();
         // there is no messages as there is not classes
-        assertThat(proto.getMessages()).hasSize(0);
+        assertThat(proto.getMessages()).isEmpty();
     }
 
     @Test
@@ -339,7 +345,7 @@ public abstract class AbstractProtoGeneratorTest<T> {
         assertThat(person.getName()).isEqualTo("Person");
         assertThat(person.getComment()).isEqualTo("@Indexed");
         assertThat(person.getJavaPackageOption()).isEqualTo("org.kie.kogito.codegen.data");
-        assertThat(person.getFields()).hasSize(16);
+        assertThat(person.getFields()).hasSize(18);
 
         int index = 0;
 
@@ -348,119 +354,135 @@ public abstract class AbstractProtoGeneratorTest<T> {
         assertThat(field.getName()).isEqualTo("adult");
         assertThat(field.getType()).isEqualTo("bool");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("age");
         assertThat(field.getType()).isEqualTo("int32");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("bigDecimal");
         assertThat(field.getType()).isEqualTo("kogito.Serializable");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
-        assertThat(field.getOption()).isEqualTo("[(kogito_java_class) = \"java.math.BigDecimal\"]");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
+        assertThat(field.getOption()).isEqualTo("[kogito_java_class = \"java.math.BigDecimal\"]");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("bytes");
         assertThat(field.getType()).isEqualTo("bytes");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("date");
         assertThat(field.getType()).isEqualTo("kogito.Date");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("duration");
         assertThat(field.getType()).isEqualTo("kogito.Serializable");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
-        assertThat(field.getOption()).isEqualTo("[(kogito_java_class) = \"java.time.Duration\"]");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
+        assertThat(field.getOption()).isEqualTo("[kogito_java_class = \"java.time.Duration\"]");
+
+        field = person.getFields().get(index++);
+        assertThat(field).isNotNull();
+        assertThat(field.getName()).isEqualTo("earnings");
+        assertThat(field.getType()).isEqualTo("kogito.Serializable");
+        assertThat(field.getApplicability()).isEqualTo("repeated");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
+        assertThat(field.getOption()).isEqualTo("[kogito_java_class = \"org.kie.kogito.codegen.data.Money[]\"]");
+
+        field = person.getFields().get(index++);
+        assertThat(field).isNotNull();
+        assertThat(field.getName()).isEqualTo("expenses");
+        assertThat(field.getType()).isEqualTo("kogito.Serializable");
+        assertThat(field.getApplicability()).isEqualTo("repeated");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
+        assertThat(field.getOption()).isEqualTo("[kogito_java_class = \"java.util.List\"]");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("id");
         assertThat(field.getType()).isEqualTo("string");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("instant");
         assertThat(field.getType()).isEqualTo("kogito.Instant");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("localDate");
         assertThat(field.getType()).isEqualTo("kogito.Serializable");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
-        assertThat(field.getOption()).isEqualTo("[(kogito_java_class) = \"java.time.LocalDate\"]");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
+        assertThat(field.getOption()).isEqualTo("[kogito_java_class = \"java.time.LocalDate\"]");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("localDateTime");
         assertThat(field.getType()).isEqualTo("kogito.Serializable");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
-        assertThat(field.getOption()).isEqualTo("[(kogito_java_class) = \"java.time.LocalDateTime\"]");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
+        assertThat(field.getOption()).isEqualTo("[kogito_java_class = \"java.time.LocalDateTime\"]");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("name");
         assertThat(field.getType()).isEqualTo("string");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("offsetDateTime");
         assertThat(field.getType()).isEqualTo("kogito.Serializable");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
-        assertThat(field.getOption()).isEqualTo("[(kogito_java_class) = \"java.time.OffsetDateTime\"]");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
+        assertThat(field.getOption()).isEqualTo("[kogito_java_class = \"java.time.OffsetDateTime\"]");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("parent");
         assertThat(field.getType()).isEqualTo("Person");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("relatives");
         assertThat(field.getType()).isEqualTo("Person");
         assertThat(field.getApplicability()).isEqualTo("repeated");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("salary");
         assertThat(field.getType()).isEqualTo("kogito.Serializable");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
-        assertThat(field.getOption()).isEqualTo("[(kogito_java_class) = \"org.kie.kogito.codegen.data.Money\"]");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
+        assertThat(field.getOption()).isEqualTo("[kogito_java_class = \"org.kie.kogito.codegen.data.Money\"]");
 
         field = person.getFields().get(index++);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("zonedDateTime");
         assertThat(field.getType()).isEqualTo("kogito.Serializable");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
-        assertThat(field.getOption()).isEqualTo("[(kogito_java_class) = \"java.time.ZonedDateTime\"]");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
+        assertThat(field.getOption()).isEqualTo("[kogito_java_class = \"java.time.ZonedDateTime\"]");
     }
 
     @Test
@@ -487,21 +509,21 @@ public abstract class AbstractProtoGeneratorTest<T> {
         assertThat(field.getName()).isEqualTo("adult");
         assertThat(field.getType()).isEqualTo("bool");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(1);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("age");
         assertThat(field.getType()).isEqualTo("int32");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField");
 
         field = person.getFields().get(2);
         assertThat(field).isNotNull();
         assertThat(field.getName()).isEqualTo("name");
         assertThat(field.getType()).isEqualTo("string");
         assertThat(field.getApplicability()).isEqualTo("optional");
-        assertThat(field.getComment()).isEqualTo("@Field(index = Index.NO, store = Store.YES) @SortableField\n @VariableInfo(tags=\"test\")");
+        assertThat(field.getComment()).isEqualTo("@Field(index = Index.YES, store = Store.YES) @SortableField\n @VariableInfo(tags=\"test\")");
     }
 
     @Test
@@ -525,9 +547,9 @@ public abstract class AbstractProtoGeneratorTest<T> {
 
         Map<String, Integer> fields = answer.getFields();
         assertThat(fields).isNotNull()
-                .containsEntry("YES", 2)
-                .containsEntry("MAYBE", 0)
-                .containsEntry("NO", 1);
+                .containsEntry("YES", 0)
+                .containsEntry("MAYBE", 1)
+                .containsEntry("NO", 2);
     }
 
     @Test
@@ -547,6 +569,18 @@ public abstract class AbstractProtoGeneratorTest<T> {
         assertThatThrownBy(() -> generatorBroken2.protoOfDataClasses("org.kie.kogito.test.persons"))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("Cannot mix annotation");
+    }
+
+    @Test
+    void testDataClassNameConflict() {
+        AbstractProtoGenerator<T> generatorBroken = protoGeneratorBuilder()
+                .withDataClasses(Collections.singleton(convertToType(Hello.class)))
+                .build(Collections.singleton(convertToType(HelloModel.class)));
+
+        assertThatThrownBy(() -> generatorBroken.generateProtoFiles())
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining(
+                        "The data class 'org.kie.kogito.codegen.data.Hello' name, used as process variable, conflicts with the generated process model classes for Data Index protobuf. Please rename either the process 'Hello' or the Java class.");
     }
 
     @Test
@@ -596,9 +630,9 @@ public abstract class AbstractProtoGeneratorTest<T> {
 
         Map<String, Integer> fields = answer.getFields();
         assertThat(fields).isNotNull()
-                .containsEntry("YES", 2)
-                .containsEntry("MAYBE", 0)
-                .containsEntry("NO", 1);
+                .containsEntry("YES", 0)
+                .containsEntry("MAYBE", 1)
+                .containsEntry("NO", 2);
     }
 
     @Test
@@ -680,9 +714,7 @@ public abstract class AbstractProtoGeneratorTest<T> {
         byte[] list = listFile.contents();
         final ObjectMapper mapper = new ObjectMapper();
         List<String> files = mapper.readValue(list, List.class);
-        assertThat(files).isNotEmpty();
-        assertThat(files)
-                .hasAtLeastOneElementOfType(String.class)
+        assertThat(files).isNotEmpty().hasAtLeastOneElementOfType(String.class)
                 .contains("protofile.0.proto")
                 .hasSize(5);
     }
@@ -754,6 +786,20 @@ public abstract class AbstractProtoGeneratorTest<T> {
     }
 
     @Test
+    void collectionWithoutTypeProto() {
+        AbstractProtoGenerator<T> generator = protoGeneratorBuilder()
+                .withDataClasses(Collections.singleton(convertToType(ListWithoutType.class)))
+                .build(null);
+
+        assertThatThrownBy(() -> generator.protoOfDataClasses("defaultPkg"))
+                .hasCauseInstanceOf(IllegalArgumentException.class)
+                .hasMessage(
+                        "Error while generating proto for model class " + ListWithoutType.class.getName()
+                                + " Field attribute of class " + ListWithoutType.class.getName()
+                                + " uses collection without type information");
+    }
+
+    @Test
     void fieldFromClassHierarchy() {
         AbstractProtoGenerator<T> generator = protoGeneratorBuilder()
                 .withDataClasses(Arrays.asList(convertToType(Person.class), convertToType(PersonSubClass.class)))
@@ -770,13 +816,13 @@ public abstract class AbstractProtoGeneratorTest<T> {
         assertThat(person).isNotNull();
         assertThat(person.getName()).isEqualTo("Person");
         assertThat(person.getJavaPackageOption()).isEqualTo("org.kie.kogito.codegen.data");
-        assertThat(person.getFields()).hasSize(16);
+        assertThat(person.getFields()).hasSize(18);
 
         ProtoMessage personSubClass = proto.getMessages().get(1);
         assertThat(personSubClass).isNotNull();
         assertThat(personSubClass.getName()).isEqualTo("PersonSubClass");
         assertThat(personSubClass.getJavaPackageOption()).isEqualTo("org.kie.kogito.codegen.data");
-        assertThat(personSubClass.getFields()).hasSize(17);
+        assertThat(personSubClass.getFields()).hasSize(19);
 
         assertClassIsIncludedInSubclass(person, personSubClass);
     }

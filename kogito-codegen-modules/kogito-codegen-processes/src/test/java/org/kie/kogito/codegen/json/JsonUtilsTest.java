@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.json;
 
@@ -24,8 +27,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class JsonUtilsTest {
 
@@ -40,28 +42,28 @@ public class JsonUtilsTest {
         JsonNode node5 = createJson(mapper, mapper.createObjectNode().put("string", "javier"));
 
         JsonNode result = mapper.createObjectNode();
-        JsonUtils.merge(node1, result);
-        JsonUtils.merge(node2, result);
-        JsonUtils.merge(node3, result);
-        JsonUtils.merge(node4, result);
-        JsonUtils.merge(node5, result);
+        result = JsonUtils.merge(node1, result);
+        result = JsonUtils.merge(node2, result);
+        result = JsonUtils.merge(node3, result);
+        result = JsonUtils.merge(node4, result);
+        result = JsonUtils.merge(node5, result);
 
-        assertEquals(1, result.size());
+        assertThat(result.size()).isOne();
         JsonNode merged = result.get("merged");
-        assertEquals(4, merged.size());
+        assertThat(merged.size()).isEqualTo(4);
         JsonNode numbers = merged.get("numbers");
-        assertTrue(numbers instanceof ArrayNode);
+        assertThat(numbers).isInstanceOf(ArrayNode.class);
         ArrayNode numbersNode = (ArrayNode) numbers;
-        assertEquals(6, numbersNode.size());
-        assertEquals(1, numbersNode.get(0).asInt());
-        assertEquals(2, numbersNode.get(1).asInt());
-        assertEquals(3, numbersNode.get(2).asInt());
-        assertEquals(4, numbersNode.get(3).asInt());
-        assertEquals(5, numbersNode.get(4).asInt());
-        assertEquals(6, numbersNode.get(5).asInt());
-        assertEquals(false, merged.get("boolean").asBoolean());
-        assertEquals("javier", merged.get("string").asText());
-        assertEquals(1, merged.get("number").asInt());
+        assertThat(numbersNode.size()).isEqualTo(6);
+        assertThat(numbersNode.get(0).asInt()).isOne();
+        assertThat(numbersNode.get(1).asInt()).isEqualTo(2);
+        assertThat(numbersNode.get(2).asInt()).isEqualTo(3);
+        assertThat(numbersNode.get(3).asInt()).isEqualTo(4);
+        assertThat(numbersNode.get(4).asInt()).isEqualTo(5);
+        assertThat(numbersNode.get(5).asInt()).isEqualTo(6);
+        assertThat(merged.get("boolean").asBoolean()).isFalse();
+        assertThat(merged.get("string").asText()).isEqualTo("javier");
+        assertThat(merged.get("number").asInt()).isOne();
     }
 
     @Test
@@ -71,19 +73,19 @@ public class JsonUtilsTest {
         JsonNode src = createJson(mapper, createJson(mapper, "property", Arrays.asList(1, 2, 3)));
         JsonNode target = createJson(mapper, mapper.createObjectNode().put("property", 4));
 
-        JsonUtils.merge(src, target);
+        target = JsonUtils.merge(src, target);
 
-        assertEquals(1, target.size());
+        assertThat(target.size()).isOne();
         JsonNode merged = target.get("merged");
-        assertEquals(1, merged.size());
+        assertThat(merged.size()).isOne();
         JsonNode property = merged.get("property");
-        assertTrue(property instanceof ArrayNode);
+        assertThat(property).isInstanceOf(ArrayNode.class);
         ArrayNode propertyNode = (ArrayNode) property;
-        assertEquals(4, propertyNode.size());
-        assertEquals(4, propertyNode.get(0).asInt());
-        assertEquals(1, propertyNode.get(1).asInt());
-        assertEquals(2, propertyNode.get(2).asInt());
-        assertEquals(3, propertyNode.get(3).asInt());
+        assertThat(propertyNode.size()).isEqualTo(4);
+        assertThat(propertyNode.get(0).asInt()).isEqualTo(4);
+        assertThat(propertyNode.get(1).asInt()).isOne();
+        assertThat(propertyNode.get(2).asInt()).isEqualTo(2);
+        assertThat(propertyNode.get(3).asInt()).isEqualTo(3);
     }
 
     @Test
@@ -93,18 +95,18 @@ public class JsonUtilsTest {
         JsonNode src = createJson(mapper, createJson(mapper, "property", Arrays.asList(1, 2, 3)));
         JsonNode target = createJson(mapper, mapper.createObjectNode());
 
-        JsonUtils.merge(src, target);
+        target = JsonUtils.merge(src, target);
 
-        assertEquals(1, target.size());
+        assertThat(target.size()).isOne();
         JsonNode merged = target.get("merged");
-        assertEquals(1, merged.size());
+        assertThat(merged.size()).isOne();
         JsonNode property = merged.get("property");
-        assertTrue(property instanceof ArrayNode);
+        assertThat(property).isInstanceOf(ArrayNode.class);
         ArrayNode propertyNode = (ArrayNode) property;
-        assertEquals(3, propertyNode.size());
-        assertEquals(1, propertyNode.get(0).asInt());
-        assertEquals(2, propertyNode.get(1).asInt());
-        assertEquals(3, propertyNode.get(2).asInt());
+        assertThat(propertyNode.size()).isEqualTo(3);
+        assertThat(propertyNode.get(0).asInt()).isOne();
+        assertThat(propertyNode.get(1).asInt()).isEqualTo(2);
+        assertThat(propertyNode.get(2).asInt()).isEqualTo(3);
     }
 
     private JsonNode createJson(ObjectMapper mapper, String name, Collection<Integer> integers) {

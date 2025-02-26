@@ -1,17 +1,20 @@
 /*
- * Copyright 2022 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.process.persistence.marshaller;
 
@@ -225,11 +228,21 @@ public abstract class AbstractMarshallerGenerator<T> implements MarshallerGenera
                         }
 
                         if (customTypeName.equals(Serializable.class.getName())) {
-                            String fieldClazz = (String) field.getOptionByName(KOGITO_JAVA_CLASS_OPTION);
+                            String fieldClazz = (String) field.getOptionByName(KOGITO_JAVA_CLASS_OPTION).getValue();
                             if (fieldClazz == null) {
                                 throw new IllegalArgumentException(format("Serializable proto field '%s' is missing value for option %s", field.getName(), KOGITO_JAVA_CLASS_OPTION));
                             } else {
                                 read = new CastExpr().setExpression(new EnclosedExpr(read)).setType(fieldClazz);
+                                int argumentIndex = 1;
+                                MethodCallExpr writeMethod = null;
+                                if (write instanceof MethodCallExpr &&
+                                        (writeMethod = (MethodCallExpr) write).getArguments() != null &&
+                                        writeMethod.getArguments().size() > argumentIndex) {
+                                    Expression argument = writeMethod.getArgument(argumentIndex);
+                                    write = writeMethod.setArgument(
+                                            argumentIndex,
+                                            new CastExpr().setExpression(new EnclosedExpr(argument)).setType(fieldClazz));
+                                }
                             }
                         }
                     }
@@ -304,7 +317,11 @@ public abstract class AbstractMarshallerGenerator<T> implements MarshallerGenera
     }
 
     protected String packageFromOption(FileDescriptor d, Descriptor msg) {
-        return packageFromOption(d, msg.getOption(JAVA_PACKAGE_OPTION));
+        Option option = msg.getOptions().stream()
+                .filter(o -> JAVA_PACKAGE_OPTION.equals(o.getName()))
+                .findAny()
+                .orElse(null);
+        return packageFromOption(d, option);
     }
 
     protected String packageFromOption(FileDescriptor d, EnumDescriptor msg) {

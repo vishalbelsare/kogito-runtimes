@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import com.homeaway.devtools.jenkins.testing.JenkinsPipelineSpecification
 
 class JenkinsfilePromote extends JenkinsPipelineSpecification {
@@ -108,17 +127,6 @@ class JenkinsfilePromote extends JenkinsPipelineSpecification {
         !value
     }
 
-    def '[Jenkinsfile.promote] getSnapshotVersion' () {
-        setup:
-        Jenkinsfile.getBinding().setVariable('params', ['PROJECT_VERSION' : '1.0.0'])
-        explicitlyMockPipelineVariable('util')
-        getPipelineMock('util.getNextVersion')('1.0.0', 'micro') >> { return '1.0.1-SNAPSHOT' }
-        when:
-        def value = Jenkinsfile.getSnapshotVersion()
-        then:
-        value == '1.0.1-SNAPSHOT'
-    }
-
     def '[Jenkinsfile.promote] getProjectVersion: PROJECT_VERSION param' () {
         setup:
         Jenkinsfile.getBinding().setVariable('params', ['PROJECT_VERSION' : 'PROJECT_VERSION'])
@@ -202,44 +210,4 @@ class JenkinsfilePromote extends JenkinsPipelineSpecification {
         then:
         value == ''
     }
-
-    def '[Jenkinsfile.promote] getPipelinePrLink' () {
-        setup:
-        Jenkinsfile.getBinding().setVariable('pipelineProperties', ['kogito-runtimes.pr.link' : 'repo.pr.link'])
-        when:
-        def value = Jenkinsfile.getPipelinePrLink()
-        then:
-        value == 'repo.pr.link'
-    }
-
-    def '[Jenkinsfile.promote] getPipelinePrLink: no value' () {
-        setup:
-        Jenkinsfile.getBinding().setVariable('pipelineProperties', [:])
-        when:
-        def value = Jenkinsfile.getPipelinePrLink()
-        then:
-        value == null
-    }
-
-    def '[Jenkinsfile.promote] setPipelinePrLink' () {
-        setup:
-        Jenkinsfile.getBinding().setVariable('pipelineProperties', [:])
-        when:
-        Jenkinsfile.setPipelinePrLink('value')
-        then:
-        Jenkinsfile.getPipelinePrLink() == 'value'
-    }
-
-    def '[Jenkinsfile.promote] getSnapshotBranch' () {
-        setup:
-        Jenkinsfile.getBinding().setVariable('params', ['PROJECT_VERSION' : '1.0.0'])
-        explicitlyMockPipelineVariable('util')
-        getPipelineMock('util.getNextVersion')('1.0.0', 'micro') >> { return '1.0.1-SNAPSHOT' }
-        Jenkinsfile.getBinding().setVariable('env', ['BOT_BRANCH_HASH' : 'anything'])
-        when:
-        def value = Jenkinsfile.getSnapshotBranch()
-        then:
-        value == '1.0.1-snapshot-anything'
-    }
-
 }

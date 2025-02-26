@@ -1,17 +1,20 @@
 /*
- * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.maven.plugin;
 
@@ -19,7 +22,7 @@ import java.io.File;
 import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.Collection;
+import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
@@ -32,14 +35,14 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.drools.codegen.common.AppPaths;
-import org.drools.codegen.common.GeneratedFile;
+import org.drools.codegen.common.DroolsModelBuildContext;
+import org.drools.codegen.common.GeneratedFileWriter;
 import org.kie.kogito.KogitoGAV;
 import org.kie.kogito.codegen.api.Generator;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
 import org.kie.kogito.codegen.api.context.impl.JavaKogitoBuildContext;
 import org.kie.kogito.codegen.api.context.impl.QuarkusKogitoBuildContext;
 import org.kie.kogito.codegen.api.context.impl.SpringBootKogitoBuildContext;
-import org.kie.kogito.codegen.core.utils.GeneratedFileWriter;
 import org.kie.kogito.codegen.decision.DecisionCodegen;
 import org.kie.kogito.codegen.prediction.PredictionCodegen;
 import org.kie.kogito.codegen.process.ProcessCodegen;
@@ -50,6 +53,8 @@ import org.reflections.Reflections;
 import org.reflections.util.ConfigurationBuilder;
 
 public abstract class AbstractKieMojo extends AbstractMojo {
+
+    protected static final GeneratedFileWriter.Builder generatedFileWriterBuilder = GeneratedFileWriter.builder("kogito", "kogito.codegen.resources.directory", "kogito.codegen.sources.directory");
 
     @Parameter(required = true, defaultValue = "${project.basedir}")
     protected File projectDir;
@@ -63,25 +68,22 @@ public abstract class AbstractKieMojo extends AbstractMojo {
     @Parameter(required = true, defaultValue = "${project.build.outputDirectory}")
     protected File outputDirectory;
 
-    @Parameter(defaultValue = "${project.build.directory}/" + GeneratedFileWriter.DEFAULT_SOURCES_DIR)
-    protected File generatedSources;
+    @Parameter(required = true, defaultValue = "${project.basedir}")
+    protected File baseDir;
 
-    @Parameter(defaultValue = "${project.build.directory}/" + GeneratedFileWriter.DEFAULT_RESOURCE_PATH)
-    protected File generatedResources;
-
-    @Parameter(property = "kogito.codegen.persistence", defaultValue = "true")
+    @Parameter(property = "kogito.codegen.persistence")
     protected boolean persistence;
 
-    @Parameter(property = "kogito.codegen.rules", defaultValue = "true")
+    @Parameter(property = "kogito.codegen.rules")
     protected String generateRules;
 
-    @Parameter(property = "kogito.codegen.processes", defaultValue = "true")
+    @Parameter(property = "kogito.codegen.processes")
     protected String generateProcesses;
 
-    @Parameter(property = "kogito.codegen.decisions", defaultValue = "true")
+    @Parameter(property = "kogito.codegen.decisions")
     protected String generateDecisions;
 
-    @Parameter(property = "kogito.codegen.predictions", defaultValue = "true")
+    @Parameter(property = "kogito.codegen.predictions")
     protected String generatePredictions;
 
     private Reflections reflections;
@@ -98,7 +100,7 @@ public abstract class AbstractKieMojo extends AbstractMojo {
     }
 
     protected KogitoBuildContext discoverKogitoRuntimeContext(ClassLoader classLoader) {
-        AppPaths appPaths = AppPaths.fromProjectDir(projectDir.toPath(), outputDirectory.toPath());
+        AppPaths appPaths = AppPaths.fromProjectDir(projectDir.toPath());
         KogitoBuildContext context = contextBuilder()
                 .withClassAvailabilityResolver(this::hasClassOnClasspath)
                 .withClassSubTypeAvailabilityResolver(classSubTypeAvailabilityResolver())
@@ -118,10 +120,18 @@ public abstract class AbstractKieMojo extends AbstractMojo {
             URLClassLoader classLoader = (URLClassLoader) projectClassLoader();
             ConfigurationBuilder builder = new ConfigurationBuilder();
             builder.addUrls(classLoader.getURLs());
-            builder.addClassLoader(classLoader);
+            builder.addClassLoaders(classLoader);
             reflections = new Reflections(builder);
         }
         return reflections;
+    }
+
+    protected Reflections getReflections(ClassLoader toAdd) throws MojoExecutionException {
+        URLClassLoader classLoader = (URLClassLoader) projectClassLoader();
+        ConfigurationBuilder builder = new ConfigurationBuilder();
+        builder.addUrls(classLoader.getURLs());
+        builder.addClassLoaders(classLoader, toAdd);
+        return new Reflections(builder);
     }
 
     protected Predicate<Class<?>> classSubTypeAvailabilityResolver() {
@@ -136,14 +146,15 @@ public abstract class AbstractKieMojo extends AbstractMojo {
     }
 
     protected ClassLoader projectClassLoader() throws MojoExecutionException {
-        return MojoUtil.createProjectClassLoader(this.getClass().getClassLoader(),
+        ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        return MojoUtil.createProjectClassLoader(contextClassLoader,
                 project,
                 outputDirectory,
                 null);
     }
 
     protected String appPackageName() {
-        return KogitoBuildContext.DEFAULT_PACKAGE_NAME;
+        return DroolsModelBuildContext.DEFAULT_PACKAGE_NAME;
     }
 
     private void additionalProperties(KogitoBuildContext context) {
@@ -151,21 +162,31 @@ public abstract class AbstractKieMojo extends AbstractMojo {
         classToCheckForREST().ifPresent(restClass -> {
             if (!context.hasClassAvailable(restClass)) {
                 getLog().info("Disabling REST generation because class '" + restClass + "' is not available");
-                context.setApplicationProperty(KogitoBuildContext.KOGITO_GENERATE_REST, "false");
+                context.setApplicationProperty(DroolsModelBuildContext.KOGITO_GENERATE_REST, "false");
             }
         });
         classToCheckForDI().ifPresent(diClass -> {
             if (!context.hasClassAvailable(diClass)) {
                 getLog().info("Disabling dependency injection generation because class '" + diClass + "' is not available");
-                context.setApplicationProperty(KogitoBuildContext.KOGITO_GENERATE_DI, "false");
+                context.setApplicationProperty(DroolsModelBuildContext.KOGITO_GENERATE_DI, "false");
             }
         });
 
-        context.setApplicationProperty(Generator.CONFIG_PREFIX + RuleCodegen.GENERATOR_NAME, generateRules);
-        context.setApplicationProperty(Generator.CONFIG_PREFIX + ProcessCodegen.GENERATOR_NAME, generateProcesses);
-        context.setApplicationProperty(Generator.CONFIG_PREFIX + PredictionCodegen.GENERATOR_NAME, generatePredictions);
-        context.setApplicationProperty(Generator.CONFIG_PREFIX + DecisionCodegen.GENERATOR_NAME, generateDecisions);
-        context.setApplicationProperty(Generator.CONFIG_PREFIX + PersistenceGenerator.GENERATOR_NAME, Boolean.toString(persistence));
+        overwritePropertiesIfNeeded(context);
+    }
+
+    void overwritePropertiesIfNeeded(KogitoBuildContext context) {
+        overwritePropertyIfNeeded(context, RuleCodegen.GENERATOR_NAME, generateRules);
+        overwritePropertyIfNeeded(context, ProcessCodegen.GENERATOR_NAME, generateProcesses);
+        overwritePropertyIfNeeded(context, PredictionCodegen.GENERATOR_NAME, generatePredictions);
+        overwritePropertyIfNeeded(context, DecisionCodegen.GENERATOR_NAME, generateDecisions);
+        overwritePropertyIfNeeded(context, PersistenceGenerator.GENERATOR_NAME, Boolean.toString(persistence));
+    }
+
+    static void overwritePropertyIfNeeded(KogitoBuildContext context, String generatorName, String propertyValue) {
+        if (propertyValue != null && !propertyValue.isEmpty()) {
+            context.setApplicationProperty(Generator.CONFIG_PREFIX + generatorName, propertyValue);
+        }
     }
 
     private KogitoBuildContext.Builder contextBuilder() {
@@ -245,21 +266,14 @@ public abstract class AbstractKieMojo extends AbstractMojo {
         }
     }
 
-    protected void writeGeneratedFiles(Collection<GeneratedFile> generatedFiles) {
-        generatedFiles.forEach(this::writeGeneratedFile);
-    }
-
-    protected void writeGeneratedFile(GeneratedFile generatedFile) {
-        GeneratedFileWriter writer = new GeneratedFileWriter(outputDirectory.toPath(),
-                generatedSources.toPath(),
-                generatedResources.toPath(),
-                getSourcesPath().toPath());
-
-        getLog().info("Generating: " + generatedFile.relativePath());
-        writer.write(generatedFile);
-    }
-
     protected File getSourcesPath() {
-        return generatedSources;
+        // using runtime BT instead of static AppPaths.MAVEN to allow
+        // invocation from GRADLE
+        return Path.of(baseDir.getAbsolutePath(), AppPaths.BT.GENERATED_SOURCES_PATH.toString()).toFile();
+    }
+
+    protected GeneratedFileWriter getGeneratedFileWriter() {
+        return generatedFileWriterBuilder
+                .build(Path.of(baseDir.getAbsolutePath()));
     }
 }

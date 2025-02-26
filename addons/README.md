@@ -1,3 +1,22 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+  -->
+
 # Kogito Add-Ons
 
 In this package you will find the Add-Ons modules that extend the Kogito Core capabilities. They add 
@@ -9,7 +28,7 @@ The following table lists all the add-ons, independent of runtime implementation
 
 | Add-On Description     | Artifact ID                          | Since               |
 |------------------------|--------------------------------------|---------------------|
-| Human Task Predictions | kogito-addons-human-task-prediction-api | 0.7.0            |
+| Human Task Predictions | jbpm-addons-human-task-prediction-api | 0.7.0            |
 
 ### Quarkus Implementation
 
@@ -50,8 +69,8 @@ your `pom.xml` file:
 
 <dependencies>
   <dependency>
-    <groupId>org.kie.kogito</groupId>
-    <artifactId>kogito-addons-quarkus-process-management</artifactId>
+    <groupId>org.kie</groupId>
+    <artifactId>kie-addons-quarkus-process-management</artifactId>
     <version>${kogito.version}</version>
   </dependency>
 </dependencies>

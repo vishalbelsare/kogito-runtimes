@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.bpmn2.xml;
 
@@ -19,10 +22,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import org.drools.core.xml.ExtensibleXmlParser;
 import org.jbpm.bpmn2.core.Escalation;
 import org.jbpm.bpmn2.core.IntermediateLink;
 import org.jbpm.bpmn2.core.Message;
+import org.jbpm.compiler.xml.Parser;
 import org.jbpm.compiler.xml.ProcessBuildData;
 import org.jbpm.process.core.context.variable.Variable;
 import org.jbpm.process.instance.impl.actions.HandleEscalationAction;
@@ -30,6 +33,7 @@ import org.jbpm.process.instance.impl.actions.HandleMessageAction;
 import org.jbpm.process.instance.impl.actions.SignalProcessInstanceAction;
 import org.jbpm.ruleflow.core.Metadata;
 import org.jbpm.ruleflow.core.RuleFlowProcess;
+import org.jbpm.ruleflow.core.WorkflowElementIdentifierFactory;
 import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.NodeContainer;
 import org.jbpm.workflow.core.impl.DataAssociation;
@@ -45,7 +49,11 @@ import org.xml.sax.SAXException;
 
 import static org.jbpm.bpmn2.xml.ProcessHandler.createJavaAction;
 import static org.jbpm.ruleflow.core.Metadata.EVENT_TYPE;
+import static org.jbpm.ruleflow.core.Metadata.EVENT_TYPE_COMPENSATION;
+import static org.jbpm.ruleflow.core.Metadata.EVENT_TYPE_ESCALATION;
+import static org.jbpm.ruleflow.core.Metadata.EVENT_TYPE_LINK;
 import static org.jbpm.ruleflow.core.Metadata.EVENT_TYPE_MESSAGE;
+import static org.jbpm.ruleflow.core.Metadata.EVENT_TYPE_SIGNAL;
 import static org.jbpm.ruleflow.core.Metadata.MAPPING_VARIABLE;
 import static org.jbpm.ruleflow.core.Metadata.MAPPING_VARIABLE_INPUT;
 import static org.jbpm.ruleflow.core.Metadata.MESSAGE_TYPE;
@@ -53,7 +61,6 @@ import static org.jbpm.ruleflow.core.Metadata.PRODUCE_MESSAGE;
 import static org.jbpm.ruleflow.core.Metadata.SIGNAL_TYPE;
 import static org.jbpm.ruleflow.core.Metadata.TRIGGER_REF;
 import static org.jbpm.ruleflow.core.Metadata.TRIGGER_TYPE;
-import static org.jbpm.ruleflow.core.Metadata.VARIABLE;
 
 public class IntermediateThrowEventHandler extends AbstractNodeHandler {
 
@@ -72,7 +79,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
     }
 
     @Override
-    protected Node handleNode(Node newNode, Element element, String uri, String localName, ExtensibleXmlParser parser) throws SAXException {
+    protected Node handleNode(Node newNode, Element element, String uri, String localName, Parser parser) throws SAXException {
         Node node = newNode;
 
         IOSpecification ioSpecification = readThrowSpecification(parser, element);
@@ -84,21 +91,25 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
                 // reuse already created ActionNode
                 setThrowVariable(ioSpecification, node);
                 handleSignalNode(node, element, uri, localName, parser);
+                node.setMetaData(EVENT_TYPE, EVENT_TYPE_SIGNAL);
                 break;
             } else if ("messageEventDefinition".equals(nodeName)) {
                 // reuse already created ActionNode
                 setThrowVariable(ioSpecification, node);
                 handleMessageNode(node, element, uri, localName, parser);
+                node.setMetaData(EVENT_TYPE, EVENT_TYPE_MESSAGE);
                 break;
             } else if ("escalationEventDefinition".equals(nodeName)) {
                 // reuse already created ActionNode
                 setThrowVariable(ioSpecification, node);
                 handleEscalationNode(node, element, uri, localName, parser);
+                node.setMetaData(EVENT_TYPE, EVENT_TYPE_ESCALATION);
                 break;
             } else if ("compensateEventDefinition".equals(nodeName)) {
                 // reuse already created ActionNode
                 setThrowVariable(ioSpecification, node);
                 handleThrowCompensationEventNode(node, element, uri, localName, parser);
+                node.setMetaData(EVENT_TYPE, EVENT_TYPE_COMPENSATION);
                 break;
             } else if ("linkEventDefinition".equals(nodeName)) {
                 ThrowLinkNode linkNode = new ThrowLinkNode();
@@ -106,6 +117,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
                 node = linkNode;
                 setThrowVariable(ioSpecification, node);
                 handleLinkNode(element, node, xmlNode, parser);
+                node.setMetaData(EVENT_TYPE, EVENT_TYPE_LINK);
             }
             xmlNode = xmlNode.getNextSibling();
         }
@@ -122,7 +134,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
     }
 
     protected void handleLinkNode(Element element, Node node,
-            org.w3c.dom.Node xmlLinkNode, ExtensibleXmlParser parser) {
+            org.w3c.dom.Node xmlLinkNode, Parser parser) {
 
         node.setName(element.getAttribute("name"));
 
@@ -130,7 +142,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
         String name = linkAttr.getNamedItem("name").getNodeValue();
 
         String id = element.getAttribute("id");
-        node.setMetaData("UniqueId", id);
+        node.setId(WorkflowElementIdentifierFactory.fromExternalFormat(id));
         node.setMetaData(LINK_NAME, name);
 
         org.w3c.dom.Node xmlNode = xmlLinkNode.getFirstChild();
@@ -155,7 +167,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
 
                 // if there is no list, create one
                 if (null == sources) {
-                    sources = new ArrayList<String>();
+                    sources = new ArrayList<>();
                 }
 
                 // to connect nodes.
@@ -174,7 +186,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
             List<IntermediateLink> links = (List<IntermediateLink>) process
                     .getMetaData().get(ProcessHandler.LINKS);
             if (null == links) {
-                links = new ArrayList<IntermediateLink>();
+                links = new ArrayList<>();
             }
             links.add(aLink);
             process.setMetaData(ProcessHandler.LINKS, links);
@@ -183,7 +195,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
             List<IntermediateLink> links = (List<IntermediateLink>) subprocess
                     .getMetaData().get(ProcessHandler.LINKS);
             if (null == links) {
-                links = new ArrayList<IntermediateLink>();
+                links = new ArrayList<>();
             }
             links.add(aLink);
             subprocess.setMetaData(ProcessHandler.LINKS, links);
@@ -193,7 +205,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
 
     public void handleSignalNode(final Node node, final Element element,
             final String uri, final String localName,
-            final ExtensibleXmlParser parser) throws SAXException {
+            final Parser parser) throws SAXException {
         ActionNode actionNode = (ActionNode) node;
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
@@ -233,7 +245,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
     @SuppressWarnings("unchecked")
     public void handleMessageNode(final Node node, final Element element,
             final String uri, final String localName,
-            final ExtensibleXmlParser parser) throws SAXException {
+            final Parser parser) throws SAXException {
         ActionNode actionNode = (ActionNode) node;
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
@@ -271,7 +283,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
     @SuppressWarnings("unchecked")
     public void handleEscalationNode(final Node node, final Element element,
             final String uri, final String localName,
-            final ExtensibleXmlParser parser) throws SAXException {
+            final Parser parser) throws SAXException {
         ActionNode actionNode = (ActionNode) node;
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
@@ -297,7 +309,7 @@ public class IntermediateThrowEventHandler extends AbstractNodeHandler {
                     DroolsConsequenceAction action = createJavaAction(new HandleEscalationAction(faultName, variable));
                     actionNode.setAction(action);
                 } else {
-                    throw new ProcessParsingValidationException("General escalation is not yet supported");
+                    throw new ProcessParsingValidationException("Invalid throw escalation. escalation code is required");
                 }
             }
             xmlNode = xmlNode.getNextSibling();

@@ -1,21 +1,26 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.quarkus.common.deployment;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -24,29 +29,34 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import javax.inject.Inject;
-
+import org.drools.codegen.common.AppPaths;
+import org.drools.codegen.common.DroolsModelBuildContext;
 import org.drools.codegen.common.GeneratedFile;
 import org.drools.codegen.common.GeneratedFileType;
 import org.jboss.jandex.DotName;
 import org.jboss.jandex.IndexView;
 import org.jboss.jandex.Indexer;
 import org.jboss.logging.Logger;
+import org.kie.efesto.quarkus.deployment.EfestoGeneratedClassBuildItem;
+import org.kie.kogito.KogitoGAV;
 import org.kie.kogito.codegen.api.Generator;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
 import org.kie.kogito.codegen.core.utils.ApplicationGeneratorDiscovery;
-import org.kie.kogito.incubation.common.EmptyDataContext;
-import org.kie.kogito.incubation.common.EmptyMetaDataContext;
-import org.kie.kogito.incubation.common.ExtendedDataContext;
-import org.kie.kogito.incubation.common.MapDataContext;
+import org.kie.kogito.quarkus.KogitoRecorder;
 
 import io.quarkus.arc.deployment.GeneratedBeanBuildItem;
+import io.quarkus.arc.deployment.SyntheticBeanBuildItem;
 import io.quarkus.deployment.Capabilities;
 import io.quarkus.deployment.Capability;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
+import io.quarkus.deployment.annotations.ExecutionTime;
+import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.ArchiveRootBuildItem;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.GeneratedResourceBuildItem;
@@ -56,11 +66,20 @@ import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.deployment.index.IndexingUtil;
 import io.quarkus.deployment.pkg.builditem.CurateOutcomeBuildItem;
 import io.quarkus.deployment.pkg.builditem.OutputTargetBuildItem;
+import io.quarkus.maven.dependency.Dependency;
 import io.quarkus.maven.dependency.ResolvedDependency;
+import io.quarkus.paths.PathCollection;
+import io.quarkus.paths.PathList;
 import io.quarkus.resteasy.reactive.spi.GeneratedJaxRsResourceBuildItem;
 import io.quarkus.vertx.http.deployment.spi.AdditionalStaticResourceBuildItem;
 
-import static org.drools.drl.quarkus.util.deployment.DroolsQuarkusResourceUtils.compileGeneratedSources;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+
+import static org.drools.codegen.common.GeneratedFileType.COMPILED_CLASS;
+import static org.drools.quarkus.util.deployment.DroolsQuarkusResourceUtils.compileGeneratedSources;
+import static org.drools.quarkus.util.deployment.DroolsQuarkusResourceUtils.makeBuildItems;
+import static org.kie.efesto.common.api.constants.Constants.INDEXFILE_DIRECTORY_PROPERTY;
 import static org.kie.kogito.quarkus.common.deployment.KogitoQuarkusResourceUtils.HOT_RELOAD_SUPPORT_PATH;
 import static org.kie.kogito.quarkus.common.deployment.KogitoQuarkusResourceUtils.dumpFilesToDisk;
 import static org.kie.kogito.quarkus.common.deployment.KogitoQuarkusResourceUtils.getHotReloadSupportSource;
@@ -87,14 +106,25 @@ public class KogitoAssetsProcessor {
     OutputTargetBuildItem outputTargetBuildItem;
 
     @BuildStep
-    public KogitoBuildContextBuildItem generateKogitoBuildContext() {
+    public KogitoBuildContextBuildItem generateKogitoBuildContext(List<KogitoBuildContextAttributeBuildItem> attributes) {
         // configure the application generator
+        PathCollection rootPaths = getRootPaths(root.getResolvedPaths(), AppPaths.BT);
         KogitoBuildContext context =
-                kogitoBuildContext(outputTargetBuildItem.getOutputDirectory(),
-                        root.getPaths(),
+                kogitoBuildContext(rootPaths,
                         combinedIndexBuildItem.getIndex(),
                         curateOutcomeBuildItem.getApplicationModel().getAppArtifact());
+        attributes.forEach(attribute -> context.addContextAttribute(attribute.getName(), attribute.getValue()));
         return new KogitoBuildContextBuildItem(context);
+    }
+
+    @Record(ExecutionTime.STATIC_INIT)
+    @BuildStep
+    public SyntheticBeanBuildItem runtimeConfigBuildStep(KogitoRecorder recorder) {
+        Dependency appModel = curateOutcomeBuildItem.getApplicationModel().getAppArtifact();
+
+        return SyntheticBeanBuildItem.configure(KogitoGAV.class)
+                .scope(Singleton.class)
+                .supplier(recorder.kogitoGAVSupplier(appModel.getGroupId(), appModel.getArtifactId(), appModel.getVersion())).done();
     }
 
     @BuildStep
@@ -107,7 +137,17 @@ public class KogitoAssetsProcessor {
 
         validateAvailableCapabilities(context, capabilities);
 
+        // TODO to be removed with DROOLS-7090
+        boolean indexFileDirectorySet = false;
+        if (System.getProperty(INDEXFILE_DIRECTORY_PROPERTY) == null) {
+            System.setProperty(INDEXFILE_DIRECTORY_PROPERTY, context.getAppPaths().getOutputTarget().toString());
+            indexFileDirectorySet = true;
+        }
         Collection<GeneratedFile> generatedFiles = generateFiles(context);
+        // TODO to be removed with DROOLS-7090
+        if (indexFileDirectorySet) {
+            System.clearProperty(INDEXFILE_DIRECTORY_PROPERTY);
+        }
 
         // The HotReloadSupportClass has to be generated only during the first model generation
         // During actual hot reloads it will be regenerated by the compilation providers in order to retrigger this build step
@@ -134,18 +174,35 @@ public class KogitoAssetsProcessor {
 
         Collection<GeneratedFile> generatedFiles = collectGeneratedFiles(sources, addonsPreSources, addonsPostSources);
 
-        // dump files to disk
-        dumpFilesToDisk(context.getAppPaths(), generatedFiles);
+        Map<GeneratedFileType, List<GeneratedFile>> mappedGeneratedFiles = generatedFiles.stream()
+                .collect(Collectors.groupingBy(GeneratedFile::type));
 
-        // build Java source code and register the generated beans
-        Optional<KogitoGeneratedClassesBuildItem> optionalIndex = compileAndIndexJavaSources(
+        Collection<GeneratedFile> generatedJavaSourcesFiles = mappedGeneratedFiles.entrySet()
+                .stream()
+                .filter(entry -> entry.getKey() != COMPILED_CLASS)
+                .flatMap((Function<Map.Entry<GeneratedFileType, List<GeneratedFile>>, Stream<GeneratedFile>>) generatedFileTypeListEntry -> generatedFileTypeListEntry.getValue().stream())
+                .collect(Collectors.toList());
+
+        dumpFilesToDisk(context.getAppPaths(), generatedJavaSourcesFiles);
+
+        Collection<GeneratedBeanBuildItem> generatedBeanBuildItems = createGeneratedBeanBuildItemsFromJavaSources(
                 context,
-                generatedFiles,
-                generatedBeans,
-                jaxrsProducer,
+                generatedJavaSourcesFiles,
                 liveReload.isLiveReload());
 
-        registerDataEventsForReflection(optionalIndex.map(KogitoGeneratedClassesBuildItem::getIndexedClasses), context, reflectiveClass);
+        Collection<GeneratedBeanBuildItem> buildItemsFromCompiledClasses = createGeneratedBeanBuildItemsFromCompiledClasses(mappedGeneratedFiles.getOrDefault(COMPILED_CLASS, Collections.emptyList()));
+        generatedBeanBuildItems.addAll(buildItemsFromCompiledClasses);
+
+        // build Java source code and register the generated beans
+        Optional<KogitoGeneratedClassesBuildItem> optionalIndex = indexGeneratedBeanBuildItemWithRestResources(
+                context,
+                generatedJavaSourcesFiles,
+                generatedBeanBuildItems,
+                generatedBeans,
+                jaxrsProducer);
+
+        registerDataEventsForReflection(optionalIndex.map(KogitoGeneratedClassesBuildItem::getIndexedClasses),
+                context, reflectiveClass);
         registerKogitoIncubationAPI(reflectiveClass);
 
         registerResources(generatedFiles, staticResProducer, resource, genResBI);
@@ -153,6 +210,34 @@ public class KogitoAssetsProcessor {
         return optionalIndex
                 .map(Collections::singletonList)
                 .orElse(Collections.emptyList());
+    }
+
+    @BuildStep
+    public EfestoGeneratedClassBuildItem reflectiveEfestoGeneratedClassBuildItem(KogitoGeneratedSourcesBuildItem kogitoGeneratedSourcesBuildItem) {
+        LOGGER.debugf("reflectiveEfestoGeneratedClassBuildItem %s", kogitoGeneratedSourcesBuildItem);
+        return new EfestoGeneratedClassBuildItem(kogitoGeneratedSourcesBuildItem.getGeneratedFiles());
+    }
+
+    static PathCollection getRootPaths(PathCollection resolvedPaths, AppPaths.BuildTool bt) {
+        // Needed hack because during MAVEN build, resolvedPaths point to root of project,
+        // while during GRADLE build, resolved paths contains {root_project}/build/classes/java/main and
+        // {root_project}/build/resources/main
+        switch (bt) {
+            case GRADLE -> {
+                AtomicReference<PathCollection> toReturnRef = new AtomicReference<>(resolvedPaths);
+                Optional<Path> optClassesPath =
+                        resolvedPaths.stream().filter(path -> {
+                            String fullPath = path.toString();
+                            String lookingFor = "build/classes/java/main".replace("/", File.separator);
+                            return fullPath.endsWith(lookingFor);
+                        }).findFirst();
+                optClassesPath.ifPresent(classesPath -> toReturnRef.set(PathList.of(classesPath)));
+                return toReturnRef.get();
+            }
+            default -> {
+                return resolvedPaths;
+            }
+        }
     }
 
     private Collection<GeneratedFile> collectGeneratedFiles(KogitoGeneratedSourcesBuildItem sources, List<KogitoAddonsPreGeneratedSourcesBuildItem> preSources,
@@ -186,7 +271,7 @@ public class KogitoAssetsProcessor {
         // disable REST if OptaPlanner capability is available but REST is not (user can override via property)
         if (hasOptaPlannerCapability && !hasRestCapabilities &&
                 kogitoGenerateRest(context).isEmpty()) {
-            context.setApplicationProperty(KogitoBuildContext.KOGITO_GENERATE_REST, "false");
+            context.setApplicationProperty(DroolsModelBuildContext.KOGITO_GENERATE_REST, "false");
             LOGGER.info("Disabling Kogito REST generation because OptaPlanner extension is available, specify `kogito.generate.rest = true` to re-enable it");
         }
 
@@ -196,7 +281,7 @@ public class KogitoAssetsProcessor {
     }
 
     private Optional<Boolean> kogitoGenerateRest(KogitoBuildContext context) {
-        return context.getApplicationProperty(KogitoBuildContext.KOGITO_GENERATE_REST)
+        return context.getApplicationProperty(DroolsModelBuildContext.KOGITO_GENERATE_REST)
                 .map("true"::equalsIgnoreCase);
     }
 
@@ -206,17 +291,31 @@ public class KogitoAssetsProcessor {
                 .generate();
     }
 
-    private Optional<KogitoGeneratedClassesBuildItem> compileAndIndexJavaSources(
+    private Collection<GeneratedBeanBuildItem> createGeneratedBeanBuildItemsFromJavaSources(
             KogitoBuildContext context,
             Collection<GeneratedFile> generatedFiles,
-            BuildProducer<GeneratedBeanBuildItem> generatedBeans,
-            BuildProducer<GeneratedJaxRsResourceBuildItem> jaxrsProducer,
             boolean useDebugSymbols) throws IOException {
 
-        Collection<ResolvedDependency> dependencies = curateOutcomeBuildItem.getApplicationModel().getRuntimeDependencies();
+        Collection<ResolvedDependency> dependencies =
+                curateOutcomeBuildItem.getApplicationModel().getRuntimeDependencies();
+        return compileGeneratedSources(context, dependencies, generatedFiles, useDebugSymbols);
+    }
 
-        Collection<GeneratedBeanBuildItem> generatedBeanBuildItems =
-                compileGeneratedSources(context, dependencies, generatedFiles, useDebugSymbols);
+    private Collection<GeneratedBeanBuildItem> createGeneratedBeanBuildItemsFromCompiledClasses(
+            Collection<GeneratedFile> generatedFiles) {
+        Map<String, byte[]> compiledClassesMap = new HashMap<>();
+
+        generatedFiles.forEach(generatedFile -> compiledClassesMap.put(generatedFile.relativePath(), generatedFile.contents()));
+        return makeBuildItems(compiledClassesMap);
+    }
+
+    private Optional<KogitoGeneratedClassesBuildItem> indexGeneratedBeanBuildItemWithRestResources(
+            KogitoBuildContext context,
+            Collection<GeneratedFile> generatedFiles,
+            Collection<GeneratedBeanBuildItem> generatedBeanBuildItems,
+            BuildProducer<GeneratedBeanBuildItem> generatedBeans,
+            BuildProducer<GeneratedJaxRsResourceBuildItem> jaxrsProducer) throws IOException {
+
         generatedBeanBuildItems.forEach(generatedBeans::produce);
         Set<String> restResourceClassNameSet = generatedFiles.stream()
                 .filter(file -> file.type().equals(Generator.REST_TYPE))
@@ -230,13 +329,13 @@ public class KogitoAssetsProcessor {
 
     private void registerKogitoIncubationAPI(BuildProducer<ReflectiveClassBuildItem> reflectiveClass) {
         reflectiveClass.produce(
-                new ReflectiveClassBuildItem(true, true, EmptyDataContext.class.getCanonicalName()));
+                new ReflectiveClassBuildItem(true, true, "org.kie.kogito.incubation.common.EmptyDataContext"));
         reflectiveClass.produce(
-                new ReflectiveClassBuildItem(true, true, EmptyMetaDataContext.class.getCanonicalName()));
+                new ReflectiveClassBuildItem(true, true, "org.kie.kogito.incubation.common.EmptyMetaDataContext"));
         reflectiveClass.produce(
-                new ReflectiveClassBuildItem(true, true, ExtendedDataContext.class.getCanonicalName()));
+                new ReflectiveClassBuildItem(true, true, "org.kie.kogito.incubation.common.ExtendedDataContext"));
         reflectiveClass.produce(
-                new ReflectiveClassBuildItem(true, true, MapDataContext.class.getCanonicalName()));
+                new ReflectiveClassBuildItem(true, true, "org.kie.kogito.incubation.common.MapDataContext"));
     }
 
     private void registerDataEventsForReflection(Optional<IndexView> optionalIndex, KogitoBuildContext context, BuildProducer<ReflectiveClassBuildItem> reflectiveClass) {
@@ -395,4 +494,5 @@ public class KogitoAssetsProcessor {
 
         return new KogitoGeneratedClassesBuildItem(kogitoIndexer.complete(), generatedClasses);
     }
+
 }

@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.tests;
 
@@ -30,6 +33,7 @@ import org.kie.kogito.process.Processes;
 import org.kie.kogito.process.impl.Sig;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.kie.kogito.test.utils.ProcessInstancesTestUtils.assertEmpty;
 
 public class GatewayIT extends AbstractCodegenIT {
 
@@ -37,7 +41,6 @@ public class GatewayIT extends AbstractCodegenIT {
     public void testEventBasedGatewayWithData() throws Exception {
         Map<TYPE, List<String>> resourcesTypeMap = new HashMap<>();
         resourcesTypeMap.put(TYPE.PROCESS, Collections.singletonList("gateway/EventBasedSplit.bpmn2"));
-        resourcesTypeMap.put(TYPE.RULES, Collections.singletonList("ruletask/BusinessRuleTask.drl"));
         Application app = generateCode(resourcesTypeMap);
         assertThat(app).isNotNull();
 
@@ -58,7 +61,7 @@ public class GatewayIT extends AbstractCodegenIT {
         assertThat(result.toMap()).hasSize(1).containsKey("x");
         assertThat(result.toMap().get("x")).isEqualTo("test");
 
-        assertThat(p.instances().size()).isZero();
+        assertEmpty(p.instances());
 
         // not test the other branch
         processInstance = p.createInstance(m);
@@ -74,7 +77,7 @@ public class GatewayIT extends AbstractCodegenIT {
         assertThat(result.toMap()).hasSize(1).containsKey("x");
         assertThat(result.toMap().get("x")).isEqualTo("value");
 
-        assertThat(p.instances().size()).isZero();
+        assertEmpty(p.instances());
     }
 
 }

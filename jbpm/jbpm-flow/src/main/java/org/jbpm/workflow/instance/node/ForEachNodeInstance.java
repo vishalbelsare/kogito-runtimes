@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.workflow.instance.node;
 
@@ -23,12 +26,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.jbpm.process.core.ContextContainer;
 import org.jbpm.process.core.context.variable.VariableScope;
 import org.jbpm.process.instance.ContextInstance;
+import org.jbpm.process.instance.ContextableInstance;
+import org.jbpm.process.instance.KogitoProcessContextImpl;
 import org.jbpm.process.instance.context.variable.VariableScopeInstance;
 import org.jbpm.process.instance.impl.Action;
+import org.jbpm.process.instance.impl.ReturnValueEvaluator;
 import org.jbpm.ruleflow.core.Metadata;
 import org.jbpm.util.ContextFactory;
 import org.jbpm.workflow.core.Node;
@@ -46,12 +54,16 @@ import org.kie.kogito.internal.process.runtime.KogitoNodeInstance;
 import org.mvel2.integration.VariableResolver;
 import org.mvel2.integration.impl.SimpleValueResolver;
 
+import static org.jbpm.workflow.instance.WorkflowProcessParameters.WORKFLOW_PARAM_MULTIPLE_CONNECTIONS;
+
 /**
  * Runtime counterpart of a for each node.
  */
 public class ForEachNodeInstance extends CompositeContextNodeInstance {
 
     private static final long serialVersionUID = 510L;
+    private static final Set<Class<? extends org.kie.api.runtime.process.NodeInstance>> NOT_SERIALIZABLE_CLASSES = Set.of(ForEachJoinNodeInstance.class); // using Arrays.asList to allow multiple exclusions
+
     public static final String TEMP_OUTPUT_VAR = "foreach_output";
 
     private int totalInstances;
@@ -94,11 +106,7 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
             nodeInstance.setNodeId(node.getId());
             nodeInstance.setNodeInstanceContainer(this);
             nodeInstance.setProcessInstance(getProcessInstance());
-            String uniqueID = (String) node.getMetaData().get("UniqueId");
-            if (uniqueID == null) {
-                uniqueID = node.getId() + "";
-            }
-            int level = this.getLevelForNode(uniqueID);
+            int level = this.getLevelForNode(node.getUniqueId());
             nodeInstance.setLevel(level);
             return nodeInstance;
 
@@ -112,7 +120,7 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
                 nodeInstance.setNodeId(node.getId());
                 nodeInstance.setNodeInstanceContainer(this);
                 nodeInstance.setProcessInstance(getProcessInstance());
-                String uniqueID = (String) node.getMetaData().get("UniqueId");
+                String uniqueID = node.getUniqueId();
                 if (uniqueID == null) {
                     uniqueID = node.getId() + "";
                 }
@@ -133,7 +141,7 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
         return getForEachNode().isSequential() || hasAsyncInstances;
     }
 
-    public class ForEachSplitNodeInstance extends NodeInstanceImpl {
+    public class ForEachSplitNodeInstance extends NodeInstanceImpl implements ContextableInstance {
 
         private static final long serialVersionUID = 510l;
 
@@ -191,7 +199,7 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
                 try {
                     collection = MVELProcessHelper.evaluator().eval(collectionExpression, new NodeInstanceResolverFactory(
                             this));
-                } catch (Throwable t) {
+                } catch (Exception t) {
                     throw new IllegalArgumentException(
                             "Could not find collection " + collectionExpression);
                 }
@@ -211,6 +219,10 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
                     "Unexpected collection type: " + collection.getClass());
         }
 
+        @Override
+        public ContextInstance getContextInstance(String contextId) {
+            return ForEachNodeInstance.this.getContextInstance(contextId);
+        }
     }
 
     private boolean checkAsyncInstance(NodeInstance nodeInstance) {
@@ -219,7 +231,7 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
                         || (i instanceof LambdaSubProcessNodeInstance && ((LambdaSubProcessNodeInstance) i).isAsyncWaitingNodeInstance()));
     }
 
-    public class ForEachJoinNodeInstance extends NodeInstanceImpl {
+    public class ForEachJoinNodeInstance extends NodeInstanceImpl implements ContextableInstance {
 
         private static final long serialVersionUID = 510l;
 
@@ -235,22 +247,18 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
 
             Map<String, Object> tempVariables = new HashMap<>();
             if (getForEachNode().getOutputVariableName() != null) {
+                Object outputVariable = from.getVariable(getForEachNode().getOutputVariableName());
 
                 Collection<Object> outputCollection = (Collection<Object>) this.getVariable(TEMP_OUTPUT_VAR);
                 if (outputCollection == null) {
                     outputCollection = new ArrayList<>();
+                }
 
-                }
-                Object outputVariable = from.getVariable(getForEachNode().getOutputVariableName());
-                if (outputVariable != null) {
-                    outputCollection.add(outputVariable);
-                }
+                outputCollection.add(outputVariable);
 
                 setVariable(TEMP_OUTPUT_VAR, outputCollection);
-                if (getForEachNode().getOutputVariableName() != null) {
-                    //  add temp collection under actual output name for completion condition evaluation
-                    tempVariables.put(getForEachNode().getOutputVariableName(), outputVariable);
-                }
+                tempVariables.put(getForEachNode().getOutputVariableName(), outputVariable);
+
                 String outputCollectionName = getForEachNode().getOutputCollectionExpression();
                 if (outputCollectionName != null) {
                     tempVariables.put(outputCollectionName, outputCollection);
@@ -258,7 +266,7 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
 
             }
 
-            boolean isCompletionConditionMet = evaluateCompletionCondition(getForEachNode().getCompletionConditionExpression(), tempVariables);
+            boolean isCompletionConditionMet = getForEachNode().hasCompletionCondition() && evaluateCompletionCondition(getForEachNode().getCompletionConditionExpression(), tempVariables);
             if (isSequential() && !isCompletionConditionMet && !areNodeInstancesCompleted()) {
                 getFirstCompositeNodeInstance()
                         .ifPresent(nodeInstance -> {
@@ -291,7 +299,7 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
                 ((NodeInstanceContainer) getNodeInstanceContainer()).removeNodeInstance(this);
 
                 if (getForEachNode().isWaitForCompletion()) {
-                    if (!"true".equals(System.getProperty("jbpm.enable.multi.con"))) {
+                    if (!WORKFLOW_PARAM_MULTIPLE_CONNECTIONS.get(getProcessInstance().getProcess())) {
                         triggerConnection(getForEachJoinNode().getTo());
                     } else {
                         List<Connection> connections = getForEachJoinNode().getOutgoingConnections(Node.CONNECTION_DEFAULT_TYPE);
@@ -315,22 +323,19 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
             return getNodeInstanceContainer().getNodeInstances().size() == 1;
         }
 
-        private boolean evaluateCompletionCondition(String expression, Map<String, Object> tempVariables) {
-            if (expression == null || expression.isEmpty()) {
-                return false;
-            } else {
-                try {
-                    Object result = MVELProcessHelper.evaluator().eval(expression,
-                            new ForEachNodeInstanceResolverFactory(this, tempVariables));
-                    if (!(result instanceof Boolean)) {
-                        throw new IllegalArgumentException("Completion condition expression must return boolean values: " +
-                                result + " for expression " + expression);
-                    }
-                    return ((Boolean) result).booleanValue();
-                } catch (Throwable t) {
-                    throw new IllegalArgumentException("Could not evaluate completion condition  " + expression, t);
-                }
+        private boolean evaluateCompletionCondition(ReturnValueEvaluator completeConditionEvaluator, Map<String, Object> tempVariables) {
+            try {
+                KogitoProcessContextImpl context = (KogitoProcessContextImpl) ContextFactory.fromNode(this);
+                context.setContextData(tempVariables);
+                return (Boolean) completeConditionEvaluator.evaluate(context);
+            } catch (Exception t) {
+                throw new IllegalArgumentException("Could not evaluate completion condition  " + completeConditionEvaluator, t);
             }
+        }
+
+        @Override
+        public ContextInstance getContextInstance(String contextId) {
+            return ForEachNodeInstance.this.getContextInstance(contextId);
         }
     }
 
@@ -347,8 +352,23 @@ public class ForEachNodeInstance extends CompositeContextNodeInstance {
 
     @Override
     public int getLevelForNode(String uniqueID) {
-        // always 1 for for each
+        // always 1 for each
         return 1;
+    }
+
+    @Override
+    public Collection<org.kie.api.runtime.process.NodeInstance> getSerializableNodeInstances() {
+        return getNodeInstances().stream().filter(ForEachNodeInstance::isSerializable).collect(Collectors.toUnmodifiableList());
+    }
+
+    /**
+     * Check if the given <code>org.kie.api.runtime.process.NodeInstance</code> is serializable.
+     *
+     * @param toCheck
+     * @return
+     */
+    static boolean isSerializable(org.kie.api.runtime.process.NodeInstance toCheck) {
+        return !NOT_SERIALIZABLE_CLASSES.contains(toCheck.getClass());
     }
 
     private class ForEachNodeInstanceResolverFactory extends NodeInstanceResolverFactory {

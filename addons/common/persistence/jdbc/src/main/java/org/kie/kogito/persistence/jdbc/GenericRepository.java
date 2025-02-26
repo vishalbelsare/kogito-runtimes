@@ -1,137 +1,83 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.persistence.jdbc;
 
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Optional;
+import java.util.Spliterator;
+import java.util.Spliterators;
 import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import javax.sql.DataSource;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import static org.kie.kogito.persistence.jdbc.JDBCProcessInstances.PAYLOAD;
-import static org.kie.kogito.persistence.jdbc.JDBCProcessInstances.VERSION;
-
 public class GenericRepository extends Repository {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(GenericRepository.class);
+    private static final String PAYLOAD = "payload";
+    private static final String VERSION = "version";
 
-    private enum DatabaseType {
-        ANSI("ansi", "process_instances"),
-        ORACLE("Oracle", "PROCESS_INSTANCES"),
-        POSTGRES("PostgreSQL", "process_instances");
+    private final DataSource dataSource;
 
-        private final String dbIdentifier;
-        private final String tableNamePattern;
-
-        DatabaseType(final String dbIdentifier, final String tableNamePattern) {
-            this.dbIdentifier = dbIdentifier;
-            this.tableNamePattern = tableNamePattern;
-        }
-
-        String getDbIdentifier() {
-            return this.dbIdentifier;
-        }
-
-        public static DatabaseType create(final String dbIdentifier) {
-            if (ORACLE.getDbIdentifier().equals(dbIdentifier)) {
-                return ORACLE;
-            } else if (POSTGRES.getDbIdentifier().equals(dbIdentifier)) {
-                return POSTGRES;
-            } else {
-                var msg = String.format("Unrecognized DB (%s), defaulting to ansi", dbIdentifier);
-                LOGGER.warn(msg);
-                return ANSI;
-            }
-        }
-    }
-
-    private DatabaseType getDataBaseType(Connection connection) throws SQLException {
-        final DatabaseMetaData metaData = connection.getMetaData();
-        final String dbProductName = metaData.getDatabaseProductName();
-        return DatabaseType.create(dbProductName);
+    public GenericRepository(DataSource dataSource) {
+        this.dataSource = dataSource;
     }
 
     @Override
-    boolean tableExists(DataSource dataSource) {
-        try (Connection connection = dataSource.getConnection()) {
-            DatabaseType databaseType = getDataBaseType(connection);
-            final DatabaseMetaData metaData = connection.getMetaData();
-            final String[] types = { "TABLE" };
-            ResultSet tables = metaData.getTables(null, null, databaseType.tableNamePattern, types);
-            while (tables.next()) {
-                LOGGER.debug("Found process_instance table");
-                return true;
-            }
-            return false;
-        } catch (SQLException e) {
-            var msg = "Failed to read table metadata";
-            throw new RuntimeException(msg);
-        }
-    }
-
-    @Override
-    void createTable(DataSource dataSource) {
-        try (Connection connection = dataSource.getConnection()) {
-            DatabaseType databaseType = getDataBaseType(connection);
-            final List<String> statements = FileLoader.getQueryFromFile(databaseType.dbIdentifier, "create_tables");
-            for (String s : statements) {
-                try (PreparedStatement prepareStatement = connection.prepareStatement(s.trim())) {
-                    prepareStatement.execute();
-                }
-            }
-            LOGGER.info("DDL successfully done for ProcessInstance");
-        } catch (SQLException e) {
-            var msg = "Error creating process_instances table, the database should be configured properly before starting the application";
-            LOGGER.error(msg, e);
-            throw new RuntimeException(msg);
-        }
-    }
-
-    @Override
-    void insertInternal(DataSource dataSource, String processId, UUID id, byte[] payload) {
+    void insertInternal(String processId, String processVersion, UUID id, byte[] payload, String businessKey) {
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(INSERT)) {
-            statement.setString(1, id.toString());
+            String processInstanceId = id.toString();
+            statement.setString(1, processInstanceId);
             statement.setBytes(2, payload);
             statement.setString(3, processId);
-            statement.setLong(4, 0L);
+            statement.setString(4, processVersion);
+            statement.setLong(5, 0L);
             statement.executeUpdate();
+            if (businessKey != null) {
+                try (PreparedStatement businessKeyStmt = connection.prepareStatement(INSERT_BUSINESS_KEY)) {
+                    businessKeyStmt.setString(1, businessKey);
+                    businessKeyStmt.setString(2, processInstanceId);
+                    businessKeyStmt.executeUpdate();
+                }
+            }
         } catch (Exception e) {
-            throw uncheckedException(e, "Error inserting process instance %s", id);
+            throw uncheckedException(e, "Error inserting process instance id: %s, processId: %s processVersion: %s business key: %s", id, processId, processVersion, businessKey);
         }
     }
 
     @Override
-    void updateInternal(DataSource dataSource, String processId, UUID id, byte[] payload) {
+    void updateInternal(String processId, String processVersion, UUID id, byte[] payload) {
         try (Connection connection = dataSource.getConnection();
-                PreparedStatement statement = connection.prepareStatement(UPDATE)) {
+                PreparedStatement statement = connection.prepareStatement(sqlIncludingVersion(UPDATE, processVersion))) {
             statement.setBytes(1, payload);
             statement.setString(2, processId);
             statement.setString(3, id.toString());
+            if (processVersion != null) {
+                statement.setString(4, processVersion);
+            }
             statement.executeUpdate();
         } catch (Exception e) {
             throw uncheckedException(e, "Error updating process instance %s", id);
@@ -139,14 +85,17 @@ public class GenericRepository extends Repository {
     }
 
     @Override
-    boolean updateWithLock(DataSource dataSource, String processId, UUID id, byte[] payload, long version) {
+    boolean updateWithLock(String processId, String processVersion, UUID id, byte[] payload, long version) {
         try (Connection connection = dataSource.getConnection();
-                PreparedStatement statement = connection.prepareStatement(UPDATE_WITH_LOCK)) {
+                PreparedStatement statement = connection.prepareStatement(sqlIncludingVersion(UPDATE_WITH_LOCK, processVersion))) {
             statement.setBytes(1, payload);
             statement.setLong(2, version + 1);
             statement.setString(3, processId);
             statement.setString(4, id.toString());
             statement.setLong(5, version);
+            if (processVersion != null) {
+                statement.setString(6, processVersion);
+            }
             int count = statement.executeUpdate();
             return count == 1;
         } catch (Exception e) {
@@ -155,11 +104,14 @@ public class GenericRepository extends Repository {
     }
 
     @Override
-    boolean deleteInternal(DataSource dataSource, String processId, UUID id) {
+    boolean deleteInternal(String processId, String processVersion, UUID id) {
         try (Connection connection = dataSource.getConnection();
-                PreparedStatement statement = connection.prepareStatement(DELETE)) {
+                PreparedStatement statement = connection.prepareStatement(sqlIncludingVersion(DELETE, processVersion))) {
             statement.setString(1, processId);
             statement.setString(2, id.toString());
+            if (processVersion != null) {
+                statement.setString(3, processVersion);
+            }
             int count = statement.executeUpdate();
             return count == 1;
         } catch (Exception e) {
@@ -167,60 +119,153 @@ public class GenericRepository extends Repository {
         }
     }
 
+    private Record from(ResultSet rs) throws SQLException {
+        return new Record(rs.getBytes(PAYLOAD), rs.getLong(VERSION));
+    }
+
     @Override
-    Map<String, Object> findByIdInternal(DataSource dataSource, String processId, UUID id) {
-        Map<String, Object> result = new HashMap<>();
+    Optional<Record> findByIdInternal(String processId, String processVersion, UUID id) {
         try (Connection connection = dataSource.getConnection();
-                PreparedStatement statement = connection.prepareStatement(FIND_BY_ID)) {
+                PreparedStatement statement = connection.prepareStatement(sqlIncludingVersion(FIND_BY_ID, processVersion))) {
             statement.setString(1, processId);
             statement.setString(2, id.toString());
+            if (processVersion != null) {
+                statement.setString(3, processVersion);
+            }
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (resultSet.next()) {
-                    Optional<byte[]> b = Optional.ofNullable(resultSet.getBytes(PAYLOAD));
-                    if (b.isPresent()) {
-                        result.put(PAYLOAD, b.get());
-                    }
-                    result.put(VERSION, resultSet.getLong(VERSION));
-                    return result;
+                    return Optional.of(from(resultSet));
                 }
             }
         } catch (Exception e) {
             throw uncheckedException(e, "Error finding process instance %s", id);
         }
-        return result;
+        return Optional.empty();
     }
 
     @Override
-    List<byte[]> findAllInternal(DataSource dataSource, String processId) {
-        List<byte[]> result = new ArrayList<>();
+    Optional<Record> findByBusinessKey(String processId, String processVersion, String businessKey) {
         try (Connection connection = dataSource.getConnection();
-                PreparedStatement statement = connection.prepareStatement(FIND_ALL)) {
-            statement.setString(1, processId);
+                PreparedStatement statement = connection.prepareStatement(sqlIncludingVersion(FIND_BY_BUSINESS_KEY, processVersion))) {
+            statement.setString(1, businessKey);
+            statement.setString(2, processId);
+            if (processVersion != null) {
+                statement.setString(3, processVersion);
+            }
             try (ResultSet resultSet = statement.executeQuery()) {
-                while (resultSet.next()) {
-                    result.add(resultSet.getBytes(PAYLOAD));
+                return resultSet.next() ? Optional.of(from(resultSet)) : Optional.empty();
+            }
+        } catch (Exception e) {
+            throw uncheckedException(e, "Error finding process instance. Business key: %s, Process Id: %s, Process version: %s", businessKey, processId, processVersion);
+        }
+    }
+
+    private static class CloseableWrapper implements Runnable {
+
+        private Deque<AutoCloseable> wrapped = new ArrayDeque<>();
+
+        public <T extends AutoCloseable> T nest(T c) {
+            wrapped.addFirst(c);
+            return c;
+        }
+
+        @Override
+        public void run() {
+            try {
+                close();
+            } catch (Exception ex) {
+                throw new RuntimeException("Error closing resources", ex);
+            }
+        }
+
+        public void close() throws Exception {
+            Exception exception = null;
+            for (AutoCloseable wrap : wrapped) {
+                try {
+                    wrap.close();
+                } catch (Exception ex) {
+                    if (exception != null) {
+                        ex.addSuppressed(exception);
+                    }
+                    exception = ex;
                 }
             }
-            return result;
-        } catch (Exception e) {
+            if (exception != null) {
+                throw exception;
+            }
+        }
+    }
+
+    @Override
+    Stream<Record> findAllInternal(String processId, String processVersion) {
+        CloseableWrapper close = new CloseableWrapper();
+        try {
+            Connection connection = close.nest(dataSource.getConnection());
+            PreparedStatement statement = close.nest(connection.prepareStatement(sqlIncludingVersion(FIND_ALL, processVersion)));
+            statement.setString(1, processId);
+            if (processVersion != null) {
+                statement.setString(2, processVersion);
+            }
+            ResultSet resultSet = close.nest(statement.executeQuery());
+            return StreamSupport.stream(new Spliterators.AbstractSpliterator<Record>(
+                    Long.MAX_VALUE, Spliterator.ORDERED) {
+                @Override
+                public boolean tryAdvance(Consumer<? super Record> action) {
+                    try {
+                        boolean hasNext = resultSet.next();
+                        if (hasNext) {
+                            action.accept(from(resultSet));
+                        }
+                        return hasNext;
+                    } catch (SQLException e) {
+                        throw uncheckedException(e, "Error finding all process instances, for processId %s", processId);
+                    }
+                }
+            }, false).onClose(close);
+        } catch (SQLException e) {
+            try {
+                close.close();
+            } catch (Exception ex) {
+                e.addSuppressed(ex);
+            }
             throw uncheckedException(e, "Error finding all process instances, for processId %s", processId);
         }
     }
 
-    @Override
-    Long countInternal(DataSource dataSource, String processId) {
-        try (Connection connection = dataSource.getConnection();
-                PreparedStatement statement = connection.prepareStatement(COUNT)) {
-            statement.setString(1, processId);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                if (resultSet.next()) {
-                    return resultSet.getLong("count");
-                }
-            }
-        } catch (Exception e) {
-            throw uncheckedException(e, "Error counting process instances, for processId %s", processId);
-        }
-        return 0l;
+    private static String sqlIncludingVersion(String statement, String processVersion) {
+        return statement + " " + (processVersion == null ? PROCESS_VERSION_IS_NULL : PROCESS_VERSION_EQUALS_TO);
     }
 
+    @Override
+    long migrate(String processId, String processVersion, String targetProcessId, String targetProcessVersion) {
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sqlIncludingVersion(Repository.MIGRATE_BULK, processVersion))) {
+            statement.setString(1, targetProcessId);
+            statement.setString(2, targetProcessVersion);
+            statement.setString(3, processId);
+            if (processVersion != null) {
+                statement.setString(4, processVersion);
+            }
+            return statement.executeUpdate();
+        } catch (Exception e) {
+            throw uncheckedException(e, "Error updating process instance %s-%s", processId, processVersion);
+        }
+    }
+
+    @Override
+    void migrate(String processId, String processVersion, String targetProcessId, String targetProcessVersion, String[] processIds) {
+        try (Connection connection = dataSource.getConnection();
+                PreparedStatement statement = connection.prepareStatement(sqlIncludingVersion(Repository.MIGRATE_INSTANCE, processVersion))) {
+            statement.setString(1, targetProcessId);
+            statement.setString(2, targetProcessVersion);
+            statement.setObject(3, connection.createArrayOf("VARCHAR", processIds));
+            statement.setString(4, processId);
+            if (processVersion != null) {
+                statement.setString(5, processVersion);
+            }
+            statement.executeUpdate();
+        } catch (Exception e) {
+            throw uncheckedException(e, "Error updating process instance %s-%s", processId, processVersion);
+        }
+    }
 }

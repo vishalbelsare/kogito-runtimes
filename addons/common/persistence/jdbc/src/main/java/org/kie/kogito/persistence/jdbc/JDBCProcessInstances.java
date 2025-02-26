@@ -1,78 +1,53 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.persistence.jdbc;
 
-import java.util.Collection;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.sql.DataSource;
 
+import org.jbpm.flow.serialization.ProcessInstanceMarshallerService;
 import org.kie.kogito.process.MutableProcessInstances;
 import org.kie.kogito.process.Process;
 import org.kie.kogito.process.ProcessInstance;
+import org.kie.kogito.process.ProcessInstanceOptimisticLockingException;
 import org.kie.kogito.process.ProcessInstanceReadMode;
 import org.kie.kogito.process.impl.AbstractProcessInstance;
-import org.kie.kogito.serialization.process.ProcessInstanceMarshallerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.kie.kogito.process.ProcessInstanceReadMode.MUTABLE;
-
 public class JDBCProcessInstances implements MutableProcessInstances {
-
-    static final String PAYLOAD = "payload";
-    static final String VERSION = "version";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(JDBCProcessInstances.class);
 
     private final Process<?> process;
     private final ProcessInstanceMarshallerService marshaller;
-    private final boolean autoDDL;
-    private final DataSource dataSource;
     private final boolean lock;
     private final Repository repository;
 
-    public JDBCProcessInstances(Process<?> process, DataSource dataSource, boolean autoDDL, boolean lock) {
-        this.dataSource = dataSource;
+    public JDBCProcessInstances(Process<?> process, DataSource dataSource, boolean lock) {
         this.process = process;
-        this.autoDDL = autoDDL;
         this.lock = lock;
-        this.marshaller = ProcessInstanceMarshallerService.newBuilder().withDefaultObjectMarshallerStrategies().build();
-        this.repository = new GenericRepository();
-        init();
-    }
-
-    private void init() {
-        if (!autoDDL) {
-            LOGGER.debug("Auto DDL is disabled, do not running initializer scripts");
-            return;
-        }
-        try {
-            if (!repository.tableExists(dataSource)) {
-                LOGGER.info("Dynamically creating process_instances table");
-                repository.createTable(dataSource);
-            }
-        } catch (Exception e) {
-            // not break the execution flow in case of any missing permission for db application user, for instance.
-            LOGGER.error(e.getMessage(), e);
-        }
+        this.marshaller = ProcessInstanceMarshallerService.newBuilder().withDefaultObjectMarshallerStrategies().withDefaultListeners().build();
+        this.repository = new GenericRepository(dataSource);
     }
 
     @Override
@@ -83,9 +58,9 @@ public class JDBCProcessInstances implements MutableProcessInstances {
     @SuppressWarnings("unchecked")
     @Override
     public void create(String id, ProcessInstance instance) {
-        LOGGER.debug("Creating process instance id: {}, processId: {}", id, instance.process().id());
+        LOGGER.debug("Creating process instance id: {}, processId: {}, processVersion: {}", id, process.id(), process.version());
         if (isActive(instance)) {
-            repository.insertInternal(dataSource, process.id(), UUID.fromString(id), marshaller.marshallProcessInstance(instance));
+            repository.insertInternal(process.id(), process.version(), UUID.fromString(id), marshaller.marshallProcessInstance(instance), instance.businessKey());
         } else {
             LOGGER.warn("Skipping create of process instance id: {}, state: {}", id, instance.status());
         }
@@ -94,57 +69,65 @@ public class JDBCProcessInstances implements MutableProcessInstances {
     @SuppressWarnings("unchecked")
     @Override
     public void update(String id, ProcessInstance instance) {
-        LOGGER.debug("Updating process instance id: {}, processId: {}", id, instance.process().id());
-        if (isActive(instance)) {
-            if (lock) {
-                boolean isUpdated = repository.updateWithLock(dataSource, process.id(), UUID.fromString(id), marshaller.marshallProcessInstance(instance), instance.version());
-                if (!isUpdated) {
-                    throw uncheckedException(null, "The process instance with id: %s was updated or deleted by other request.", id);
+        LOGGER.debug("Updating process instance id: {}, processId: {}, processVersion: {}", id, process.id(), process.version());
+        try {
+            if (isActive(instance)) {
+                if (lock) {
+                    boolean isUpdated = repository.updateWithLock(process.id(), process.version(), UUID.fromString(id), marshaller.marshallProcessInstance(instance), instance.version());
+                    if (!isUpdated) {
+                        throw new ProcessInstanceOptimisticLockingException(id);
+                    }
+                } else {
+                    repository.updateInternal(process.id(), process.version(), UUID.fromString(id), marshaller.marshallProcessInstance(instance));
                 }
             } else {
-                repository.updateInternal(dataSource, process.id(), UUID.fromString(id), marshaller.marshallProcessInstance(instance));
+                LOGGER.warn("Process instance id: {}, state: {} is not active, skipping update", id, instance.status());
             }
-        } else {
-            LOGGER.warn("Process instance id: {}, state: {} is not active, skipping update", id, instance.status());
+        } finally {
+            disconnect(instance);
         }
-        disconnect(instance);
+    }
+
+    @Override
+    public long migrateAll(String targetProcessId, String targetProcessVersion) {
+        return repository.migrate(process.id(), process.version(), targetProcessId, targetProcessVersion);
+    }
+
+    @Override
+    public void migrateProcessInstances(String targetProcessId, String targetProcessVersion, String... processIds) {
+        repository.migrate(process.id(), process.version(), targetProcessId, targetProcessVersion, processIds);
     }
 
     @Override
     public void remove(String id) {
         LOGGER.debug("Removing process instance id: {}, processId: {}", id, process.id());
-        boolean isDeleted = repository.deleteInternal(dataSource, process.id(), UUID.fromString(id));
+        boolean isDeleted = repository.deleteInternal(process.id(), process.version(), UUID.fromString(id));
         LOGGER.debug("Deleted: {}", isDeleted);
-        if (lock && !isDeleted) {
-            throw uncheckedException(null, "Process instance with id: %s was deleted by other request.", id);
-        }
     }
 
     @Override
-    public Optional<ProcessInstance> findById(String id, ProcessInstanceReadMode mode) {
+    public Optional<ProcessInstance<?>> findById(String id, ProcessInstanceReadMode mode) {
         LOGGER.debug("Find process instance id: {}, mode: {}", id, mode);
-        Map<String, Object> map = repository.findByIdInternal(dataSource, process.id(), UUID.fromString(id));
-        if (map.containsKey(PAYLOAD)) {
-            byte[] b = (byte[]) map.get(PAYLOAD);
-            ProcessInstance<?> instance = mode == MUTABLE ? marshaller.unmarshallProcessInstance(b, process)
-                    : marshaller.unmarshallReadOnlyProcessInstance(b, process);
-            ((AbstractProcessInstance<?>) instance).setVersion((Long) map.get(VERSION));
-            return Optional.of(instance);
-        }
-        return Optional.empty();
+        return repository.findByIdInternal(process.id(), process.version(), UUID.fromString(id)).map(r -> unmarshall(r, mode));
     }
 
     @Override
-    public Collection<ProcessInstance> values(ProcessInstanceReadMode mode) {
+    public Optional<ProcessInstance<?>> findByBusinessKey(String businessKey, ProcessInstanceReadMode mode) {
+        LOGGER.debug("Find process instance using business Key : {}", businessKey);
+        return repository.findByBusinessKey(process.id(), process.version(), businessKey).map(r -> unmarshall(r, mode));
+    }
+
+    @Override
+    public Stream<ProcessInstance<?>> stream(ProcessInstanceReadMode mode) {
         LOGGER.debug("Find process instance values using mode: {}", mode);
-        return repository.findAllInternal(dataSource, process.id()).stream()
-                .map(b -> mode == MUTABLE ? marshaller.unmarshallProcessInstance(b, process) : marshaller.unmarshallReadOnlyProcessInstance(b, process))
-                .collect(Collectors.toList());
+        return repository.findAllInternal(process.id(), process.version())
+                .map(r -> unmarshall(r, mode));
     }
 
-    @Override
-    public Integer size() {
-        return repository.countInternal(dataSource, process.id()).intValue();
+    private ProcessInstance<?> unmarshall(Repository.Record record, ProcessInstanceReadMode mode) {
+        ProcessInstance<?> instance = marshaller.unmarshallProcessInstance(record.getPayload(), process, mode);
+        ((AbstractProcessInstance<?>) instance).setVersion(record.getVersion());
+        return instance;
     }
 
     @Override
@@ -152,16 +135,11 @@ public class JDBCProcessInstances implements MutableProcessInstances {
         return this.lock;
     }
 
-    private void disconnect(ProcessInstance instance) {
-        Supplier<byte[]> supplier = () -> {
-            Map<String, Object> map = repository.findByIdInternal(dataSource, process.id(), UUID.fromString(instance.id()));
-            ((AbstractProcessInstance<?>) instance).setVersion((Long) map.get(VERSION));
-            return (byte[]) map.get(PAYLOAD);
-        };
-        ((AbstractProcessInstance<?>) instance).internalRemoveProcessInstance(marshaller.createdReloadFunction(supplier));
-    }
-
-    private RuntimeException uncheckedException(Exception ex, String message, Object... param) {
-        return new RuntimeException(String.format(message, param), ex);
+    private void disconnect(ProcessInstance<?> instance) {
+        ((AbstractProcessInstance<?>) instance).internalRemoveProcessInstance(marshaller.createdReloadFunction(() -> {
+            Repository.Record r = repository.findByIdInternal(process.id(), process.version(), UUID.fromString(instance.id())).orElseThrow();
+            ((AbstractProcessInstance<?>) instance).setVersion(r.getVersion());
+            return r.getPayload();
+        }));
     }
 }

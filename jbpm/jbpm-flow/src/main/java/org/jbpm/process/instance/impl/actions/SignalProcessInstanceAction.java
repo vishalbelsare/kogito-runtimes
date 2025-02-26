@@ -1,23 +1,27 @@
 /*
- * Copyright 2020 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.instance.impl.actions;
 
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 
 import org.jbpm.process.instance.impl.Action;
@@ -27,8 +31,12 @@ import org.kie.kogito.internal.process.runtime.KogitoProcessContext;
 import org.kie.kogito.internal.process.runtime.KogitoProcessInstance;
 import org.kie.kogito.process.workitems.InternalKogitoWorkItemManager;
 import org.kie.kogito.process.workitems.impl.KogitoWorkItemImpl;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class SignalProcessInstanceAction implements Action, Serializable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SignalProcessInstanceAction.class);
 
     public static final String DEFAULT_SCOPE = "default";
     public static final String PROCESS_INSTANCE_SCOPE = "processInstance";
@@ -80,14 +88,17 @@ public class SignalProcessInstanceAction implements Action, Serializable {
         Object signal = null;
         if (inputVariable != null) {
             signal = context.getContextData().get(inputVariable);
-        } else {
+        }
+        if (signal == null) {
             if (variableName != null) {
                 signal = context.getVariable(variableName);
             } else {
                 signal = eventDataSupplier.apply(context);
             }
         }
-        signal = signal != null ? signal : variableName;
+        if (signal == null) {
+            signal = variableName;
+        }
         // compute inputs for throwing
         Map<String, Object> inputSet = new HashMap<>();
         inputSet.put("Data", signal);
@@ -95,15 +106,18 @@ public class SignalProcessInstanceAction implements Action, Serializable {
         String signalName = VariableUtil.resolveVariable(this.signalNameTemplate, context.getNodeInstance());
         context.getKogitoProcessRuntime().getProcessEventSupport()
                 .fireOnSignal(processInstance, nodeInstance, context.getKieRuntime(), signalName, signal);
+        LOG.debug("about to signal {} process {} with scope {}", signalName, processInstance.getId(), scope);
         if (DEFAULT_SCOPE.equals(scope)) {
             context.getKogitoProcessRuntime().signalEvent(signalName, signal);
         } else if (PROCESS_INSTANCE_SCOPE.equals(scope)) {
             context.getProcessInstance().signalEvent(signalName, signal);
         } else if (EXTERNAL_SCOPE.equals(scope)) {
             KogitoWorkItemImpl workItem = new KogitoWorkItemImpl();
+            workItem.setId(UUID.randomUUID().toString());
             workItem.setName("External Send Task");
             workItem.setNodeInstanceId(context.getNodeInstance().getStringId());
             workItem.setProcessInstanceId(context.getProcessInstance().getStringId());
+            workItem.setProcessInstance(processInstance);
             workItem.setNodeId(context.getNodeInstance().getNodeId());
 
             workItem.getParameters().putAll(inputSet);

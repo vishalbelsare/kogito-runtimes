@@ -1,24 +1,41 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import org.jenkinsci.plugins.workflow.libs.Library
 @Library('jenkins-pipeline-shared-libraries')_
 
 import org.kie.jenkins.MavenCommand
-import org.kie.jenkins.MavenStagingHelper
 
 deployProperties = [:]
 
 pipeline {
     agent {
-        label 'kie-rhel7 && kie-mem16g'
-    }
-
-    tools {
-        maven 'kie-maven-3.8.1'
-        jdk 'kie-jdk11'
+        docker { 
+            image env.AGENT_DOCKER_BUILDER_IMAGE
+            args env.AGENT_DOCKER_BUILDER_ARGS
+            label util.avoidFaultyNodes()
+        }
     }
 
     options {
         timestamps()
-        timeout(time: 180, unit: 'MINUTES')
+        timeout(time: 360, unit: 'MINUTES')
     }
 
     // parameters {
@@ -30,18 +47,14 @@ pipeline {
 
         KOGITO_CI_EMAIL_TO = credentials("${JENKINS_EMAIL_CREDS_ID}")
 
-        // Keep here for visitibility
-        MAVEN_OPTS = '-Xms1024m -Xmx4g'
-
-        BOT_BRANCH_HASH = "${util.generateHash(10)}"
-        MAVEN_DEPLOY_LOCAL_DIR = "${WORKSPACE}/maven_deploy_dir"
+        PR_BRANCH_HASH = "${util.generateHash(10)}"
     }
 
     stages {
         stage('Initialize') {
             steps {
                 script {
-                    cleanWs()
+                    cleanWs(disableDeferredWipeout: true)
 
                     if (params.DISPLAY_NAME) {
                         currentBuild.displayName = params.DISPLAY_NAME
@@ -77,12 +90,15 @@ pipeline {
         }
         stage('Prepare for PR') {
             when {
-                expression { return isRelease() || isCreatePr() }
+                expression { return isCreatePr() }
             }
             steps {
                 script {
                     dir(getRepoName()) {
-                        prepareForPR()
+                        if (githubscm.isBranchExist('origin',getPRBranch())) {
+                            githubscm.removeRemoteBranch('origin', getPRBranch(), getGitAuthorPushCredsId())
+                        }
+                        githubscm.createBranch(getPRBranch())
                     }
                 }
             }
@@ -93,21 +109,60 @@ pipeline {
             }
             steps {
                 script {
-                    maven.mvnVersionsSet(getMavenCommand(), getProjectVersion(), !isRelease())
-                    maven.mvnSetVersionProperty(getMavenCommand(), 'version.org.kie', getDroolsVersion())
+                    configFileProvider([configFile(fileId: env.MAVEN_SETTINGS_CONFIG_FILE_ID, variable: 'MAVEN_SETTINGS_FILE')]){
+                        maven.mvnVersionsSet(
+                            getMavenCommand().withSettingsXmlFile(MAVEN_SETTINGS_FILE),
+                            getProjectVersion(),
+                            !isRelease()
+                        )
+                        maven.mvnSetVersionProperty(
+                            getMavenCommand().withSettingsXmlFile(MAVEN_SETTINGS_FILE),
+                            'version.org.kie', getDroolsVersion()
+                        )
+
+                        // Need artifacts available locally
+                        getMavenCommand()
+                            .withProperty('quickly')
+                            .withSettingsXmlFile(MAVEN_SETTINGS_FILE)
+                            .run('clean install')
+                        maven.mvnSetVersionProperty(
+                            getMavenCommand(getWorkflowCommonDeploymentPath()).withSettingsXmlFile(MAVEN_SETTINGS_FILE),
+                            'data-index-ephemeral.image',
+                            getDataIndexEphemeralReleaseImage()
+                        )
+                    }
                 }
             }
         }
-        stage('Build & Test') {
+        stage('Deploy kogito-runtimes') {
             steps {
                 script {
-                    getMavenCommand()
-                        .withProperty('maven.test.failure.ignore', true)
-                        // `-Dquarkus.bootstrap.effective-model-builder` is a temporary fix due to quarkus resolver on tests
-                        // https://github.com/quarkusio/quarkus/issues/23205
-                        .withProperty('quarkus.bootstrap.effective-model-builder', true)
-                        .skipTests(params.SKIP_TESTS)
-                        .run('clean install')
+                    withCredentials([usernamePassword(credentialsId: env.MAVEN_REPO_CREDS_ID, usernameVariable: 'REPOSITORY_USER', passwordVariable: 'REPOSITORY_TOKEN')]) {
+                        def installOrDeploy
+                        if (shouldDeployToRepository()) {
+                            installOrDeploy = "deploy -DdeployAtEnd -Dapache.repository.username=${REPOSITORY_USER} -Dapache.repository.password=${REPOSITORY_TOKEN} -DretryFailedDeploymentCount=5"
+                        } else {
+                            installOrDeploy = 'install'
+                        }
+                        def mvnCmd = getMavenCommand()
+                            .withOptions(env.BUILD_MVN_OPTS_CURRENT ? [ env.BUILD_MVN_OPTS_CURRENT ] : [])
+                            .withOptions(env.KOGITO_RUNTIMES_BUILD_MVN_OPTS ? [ env.KOGITO_RUNTIMES_BUILD_MVN_OPTS ] : [])
+                            .withProperty('maven.test.failure.ignore', true)
+
+                        if (params.SKIP_TESTS) {
+                            mvnCmd.skipTests() // Conflict somehow with Python testing. If `skipTests={anyvalue}` is set, then exec plugin is not executed ...
+                        }
+                        if (isRelease()) {
+                            releaseUtils.gpgImportKeyFromStringWithoutPassword(getReleaseGpgSignKeyCredsId())
+                            mvnCmd
+                            .withProfiles(['apache-release'])
+                            .withProperty('only.reproducible')
+                        }
+                        configFileProvider([configFile(fileId: env.MAVEN_SETTINGS_CONFIG_FILE_ID, variable: 'MAVEN_SETTINGS_FILE')]) {
+                            mvnCmd.withSettingsXmlFile(MAVEN_SETTINGS_FILE)
+                                .run("clean $installOrDeploy")
+                        }
+                    }
                 }
             }
             post {
@@ -119,51 +174,9 @@ pipeline {
                 }
             }
         }
-        stage('Deploy to repository') {
-            when {
-                expression { return !shouldStageArtifacts() && !isSpecificArtifactsUpload() && shouldDeployToRepository() }
-            }
-            steps {
-                script {
-                    runMavenDeploy()
-                }
-            }
-        }
-        stage('Deploy locally') {
-            when {
-                expression { return shouldStageArtifacts() || isSpecificArtifactsUpload() }
-            }
-            steps {
-                script {
-                    runMavenDeploy(true)
-                }
-            }
-        }
-        stage('Upload artifacts to given repository') {
-            when {
-                expression { return isSpecificArtifactsUpload() }
-            }
-            steps {
-                script {
-                    // Deploy to specific repository with credentials
-                    maven.uploadLocalArtifacts(env.MAVEN_REPO_CREDS_ID, getLocalDeploymentFolder(), getMavenRepoZipUrl())
-                }
-            }
-        }
-        stage('Stage artifacts') {
-            when {
-                expression { return shouldStageArtifacts() }
-            }
-            steps {
-                script {
-                    // Stage release artifacts
-                    runMavenStage()
-                }
-            }
-        }
         stage('Create PR') {
             when {
-                expression { return isRelease() || isCreatePr() }
+                expression { return isCreatePr() }
             }
             steps {
                 script {
@@ -179,10 +192,30 @@ pipeline {
             post {
                 success {
                     script {
-                        setDeployPropertyIfNeeded("${getRepoName()}.pr.source.uri", "https://github.com/${getBotAuthor()}/${getRepoName()}")
-                        setDeployPropertyIfNeeded("${getRepoName()}.pr.source.ref", getBotBranch())
+                        setDeployPropertyIfNeeded("${getRepoName()}.pr.source.uri", "https://github.com/${getGitAuthor()}/${getRepoName()}")
+                        setDeployPropertyIfNeeded("${getRepoName()}.pr.source.ref", getPRBranch())
                         setDeployPropertyIfNeeded("${getRepoName()}.pr.target.uri", "https://github.com/${getGitAuthor()}/${getRepoName()}")
                         setDeployPropertyIfNeeded("${getRepoName()}.pr.target.ref", getBuildBranch())
+                    }
+                }
+            }
+        }
+        stage('Commit and Create Tag') {
+            when {
+                expression { return isRelease() }
+            }
+            steps {
+                script {
+                    dir(getRepoName()) {
+                        if (githubscm.isThereAnyChanges()) {
+                            def commitMsg = "[${getBuildBranch()}] Update version to ${getProjectVersion()}"
+                            githubscm.setUserConfigFromCreds(getGitAuthorPushCredsId())
+                            githubscm.commitChanges(commitMsg, { githubscm.findAndStageNotIgnoredFiles('pom.xml') })
+                        } else {
+                            println '[WARN] no changes to commit'
+                        }
+                        githubscm.tagRepository(getGitTagName())
+                        githubscm.pushRemoteTag('origin', getGitTagName(), getGitAuthorPushCredsId())
                     }
                 }
             }
@@ -201,7 +234,7 @@ pipeline {
         }
         cleanup {
             script {
-                util.cleanNode('docker')
+                util.cleanNode()
             }
         }
     }
@@ -213,21 +246,16 @@ void saveReports() {
 
 void checkoutRepo() {
     deleteDir()
-    checkout(githubscm.resolveRepository(getRepoName(), getGitAuthor(), getBuildBranch(), false))
-}
-
-void prepareForPR() {
-    githubscm.forkRepo(getBotAuthorCredsID())
-    githubscm.createBranch(getBotBranch())
+    checkout(githubscm.resolveRepository(getRepoName(), getGitAuthor(), getBuildBranch(), false, getGitAuthorCredsId()))
 }
 
 void commitAndCreatePR() {
     def commitMsg = "[${getBuildBranch()}] Update version to ${getProjectVersion()}"
     def prBody = "Generated by build ${BUILD_TAG}: ${BUILD_URL}.\nPlease do not merge, it should be merged automatically."
-
+    githubscm.setUserConfigFromCreds(getGitAuthorPushCredsId())
     githubscm.commitChanges(commitMsg, { githubscm.findAndStageNotIgnoredFiles('pom.xml') })
-    githubscm.pushObject('origin', getBotBranch(), getBotAuthorCredsID())
-    deployProperties["${getRepoName()}.pr.link"] = githubscm.createPR(commitMsg, prBody, getBuildBranch(), getBotAuthorCredsID())
+    githubscm.pushObject('origin', getPRBranch(), getGitAuthorPushCredsId())
+    deployProperties["${getRepoName()}.pr.link"] = githubscm.createPRWithLabels(commitMsg, prBody, getBuildBranch(), ['skip-ci'] as String[], getGitAuthorCredsId())
 }
 
 void sendNotification() {
@@ -238,20 +266,12 @@ void sendNotification() {
     }
 }
 
-boolean isSpecificArtifactsUpload() {
-    return env.MAVEN_DEPLOY_REPOSITORY && env.MAVEN_REPO_CREDS_ID
-}
-
-boolean shouldStageArtifacts() {
-    return !isSpecificArtifactsUpload() && isRelease() && !env.MAVEN_DEPLOY_REPOSITORY
-}
-
 boolean shouldDeployToRepository() {
-    return env.MAVEN_DEPLOY_REPOSITORY || getGitAuthor() == 'kiegroup'
+    return env.MAVEN_DEPLOY_REPOSITORY && env.MAVEN_REPO_CREDS_ID && getGitAuthor() == 'apache'
 }
 
 boolean isRelease() {
-    return env.RELEASE.toBoolean()
+    return env.RELEASE ? env.RELEASE.toBoolean() : false
 }
 
 boolean isCreatePr() {
@@ -267,6 +287,14 @@ String getGitAuthor() {
     return "${GIT_AUTHOR}"
 }
 
+String getGitAuthorCredsId() {
+    return env.GIT_AUTHOR_CREDS_ID
+}
+
+String getGitAuthorPushCredsId() {
+    return env.GIT_AUTHOR_PUSH_CREDS_ID
+}
+
 String getBuildBranch() {
     return params.BUILD_BRANCH_NAME
 }
@@ -279,16 +307,8 @@ String getDroolsVersion() {
     return params.DROOLS_VERSION
 }
 
-String getBotBranch() {
-    return "${getProjectVersion()}-${env.BOT_BRANCH_HASH}"
-}
-
-String getBotAuthor() {
-    return env.GIT_AUTHOR_BOT
-}
-
-String getBotAuthorCredsID() {
-    return env.BOT_CREDENTIALS_ID
+String getPRBranch() {
+    return params.KOGITO_PR_BRANCH
 }
 
 void setDeployPropertyIfNeeded(String key, def value) {
@@ -300,39 +320,27 @@ void setDeployPropertyIfNeeded(String key, def value) {
 MavenCommand getMavenCommand(String directory = '') {
     directory = directory ?: getRepoName()
     return new MavenCommand(this, ['-fae', '-ntp'])
-                .withSettingsXmlId(env.MAVEN_SETTINGS_CONFIG_FILE_ID)
+                .withOptions(env.BUILD_MVN_OPTS ? [ env.BUILD_MVN_OPTS ] : [])
                 .inDirectory(directory)
                 .withProperty('full')
 }
 
-void runMavenDeploy(boolean localDeployment = false) {
-    mvnCmd = getMavenCommand()
-
-    if(localDeployment) {
-        mvnCmd.withLocalDeployFolder(getLocalDeploymentFolder())
-    } else if (env.MAVEN_DEPLOY_REPOSITORY) {
-        mvnCmd.withDeployRepository(env.MAVEN_DEPLOY_REPOSITORY)
-    }
-
-    mvnCmd.skipTests(true).run('clean deploy')
+String getWorkflowCommonDeploymentPath() {
+    return "${getRepoName()}/quarkus/extensions/kogito-quarkus-workflow-extension-common/kogito-quarkus-workflow-common-deployment"
 }
 
-String getMavenRepoZipUrl() {
-    return "${env.MAVEN_DEPLOY_REPOSITORY.replaceAll('/content/', '/service/local/').replaceFirst('/*$', '')}/content-compressed"
+String getDataIndexEphemeralReleaseImage() {
+    return "docker.io/apache/incubator-kie-kogito-data-index-ephemeral:${util.getMajorMinorVersion(getProjectVersion())}"
 }
 
-void runMavenStage() {
-    MavenStagingHelper stagingHelper = getStagingHelper()
-    deployProperties.putAll(stagingHelper.stageLocalArtifacts(env.NEXUS_STAGING_PROFILE_ID, getLocalDeploymentFolder()))
-    stagingHelper.promoteStagingRepository(env.NEXUS_BUILD_PROMOTION_PROFILE_ID)
+String getReleaseGpgSignKeyCredsId() {
+    return env.RELEASE_GPG_SIGN_KEY_CREDS_ID
 }
 
-MavenStagingHelper getStagingHelper() {
-    return new MavenStagingHelper(this, getMavenCommand())
-        .withNexusReleaseUrl(env.NEXUS_RELEASE_URL)
-        .withNexusReleaseRepositoryId(env.NEXUS_RELEASE_REPOSITORY_ID)
+String getReleaseGpgSignPassphraseCredsId() {
+    return env.RELEASE_GPG_SIGN_PASSPHRASE_CREDS_ID
 }
 
-String getLocalDeploymentFolder() {
-    return "${env.MAVEN_DEPLOY_LOCAL_DIR}/${getRepoName()}"
+String getGitTagName() {
+    return params.GIT_TAG_NAME
 }

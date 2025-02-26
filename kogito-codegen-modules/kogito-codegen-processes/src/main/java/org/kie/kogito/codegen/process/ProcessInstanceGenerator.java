@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.process;
 
@@ -23,6 +26,7 @@ import org.jbpm.compiler.canonical.ModelMetaData;
 import org.kie.api.runtime.process.ProcessRuntime;
 import org.kie.api.runtime.process.WorkflowProcessInstance;
 import org.kie.kogito.codegen.core.BodyDeclarationComparator;
+import org.kie.kogito.correlation.CompositeCorrelation;
 import org.kie.kogito.process.impl.AbstractProcessInstance;
 
 import com.github.javaparser.ast.CompilationUnit;
@@ -47,10 +51,10 @@ public class ProcessInstanceGenerator {
     private static final String VALUE = "value";
     private static final String PROCESS_RUNTIME = "processRuntime";
     private static final String BUSINESS_KEY = "businessKey";
+    private static final String CORRELATION = "correlation";
     private static final String WPI = "wpi";
 
     private final String packageName;
-    private final String typeName;
     private final ModelMetaData model;
     private final String canonicalName;
     private final String targetTypeName;
@@ -64,7 +68,6 @@ public class ProcessInstanceGenerator {
 
     public ProcessInstanceGenerator(String packageName, String typeName, ModelMetaData model) {
         this.packageName = packageName;
-        this.typeName = typeName;
         this.model = model;
         this.canonicalName = packageName + "." + typeName;
         this.targetTypeName = typeName + "ProcessInstance";
@@ -84,6 +87,7 @@ public class ProcessInstanceGenerator {
     public CompilationUnit compilationUnit() {
         CompilationUnit compilationUnit = new CompilationUnit(packageName);
         compilationUnit.getTypes().add(classDeclaration());
+        compilationUnit.addImport(model.getModelClassName());
         return compilationUnit;
     }
 
@@ -99,6 +103,7 @@ public class ProcessInstanceGenerator {
                 .addMember(constructorWithBusinessKeyDecl())
                 .addMember(constructorWithWorkflowInstanceAndRuntimeDecl())
                 .addMember(constructorWorkflowInstanceDecl())
+                .addMember(constructorWithCorrelationDecl())
                 .addMember(bind())
                 .addMember(unbind());
         classDecl.getMembers().sort(new BodyDeclarationComparator());
@@ -170,6 +175,24 @@ public class ProcessInstanceGenerator {
                         new NameExpr(VALUE),
                         new NameExpr(BUSINESS_KEY),
                         new NameExpr(PROCESS_RUNTIME))));
+    }
+
+    private ConstructorDeclaration constructorWithCorrelationDecl() {
+        return new ConstructorDeclaration()
+                .setName(targetTypeName)
+                .addModifier(Modifier.Keyword.PUBLIC)
+                .addParameter(ProcessGenerator.processType(canonicalName), PROCESS)
+                .addParameter(model.getModelClassSimpleName(), VALUE)
+                .addParameter(String.class.getCanonicalName(), BUSINESS_KEY)
+                .addParameter(ProcessRuntime.class.getCanonicalName(), PROCESS_RUNTIME)
+                .addParameter(CompositeCorrelation.class.getCanonicalName(), CORRELATION)
+                .setBody(new BlockStmt().addStatement(new MethodCallExpr(
+                        "super",
+                        new NameExpr(PROCESS),
+                        new NameExpr(VALUE),
+                        new NameExpr(BUSINESS_KEY),
+                        new NameExpr(PROCESS_RUNTIME),
+                        new NameExpr(CORRELATION))));
     }
 
     private ConstructorDeclaration constructorWithWorkflowInstanceAndRuntimeDecl() {

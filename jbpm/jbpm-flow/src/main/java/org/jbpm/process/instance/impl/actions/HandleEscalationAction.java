@@ -1,17 +1,20 @@
 /*
- * Copyright 2020 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.instance.impl.actions;
 
@@ -42,6 +45,14 @@ public class HandleEscalationAction implements Action, Serializable {
         this.variableName = variableName;
     }
 
+    public String getFaultName() {
+        return faultName;
+    }
+
+    public String getVariableName() {
+        return variableName;
+    }
+
     @Override
     public void execute(KogitoProcessContext context) throws Exception {
         ExceptionScopeInstance scopeInstance = (ExceptionScopeInstance) ((NodeInstance) context.getNodeInstance()).resolveContextInstance(ExceptionScope.EXCEPTION_SCOPE,
@@ -50,12 +61,13 @@ public class HandleEscalationAction implements Action, Serializable {
             Object event = variableName == null ? null : context.getVariable(variableName);
             NodeInstanceImpl impl = ((NodeInstanceImpl) context.getNodeInstance());
             // for event nodes we create a "virtual assignment and we process it"
-            Map<String, Object> outputSet = Collections.singletonMap(variableName, event);
+            Map<String, Object> outputSet = variableName != null ? Collections.singletonMap(variableName, event) : Collections.emptyMap();
             NodeIoHelper.processOutputs(impl, varRef -> outputSet.get(varRef), target -> impl.getVariable(target));
-            context.getContextData().put("Exception", context.getVariable(variableName));
+            if (variableName != null) {
+                context.getContextData().put("Exception", context.getVariable(variableName));
+            }
             scopeInstance.handleException(faultName, context);
         } else {
-
             ((ProcessInstance) context.getProcessInstance()).setState(STATE_ABORTED);
         }
     }
